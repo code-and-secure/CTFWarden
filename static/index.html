@@ -98,7 +98,7 @@ code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.05);bor
 .bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 
 /* ---------- tables ---------- */
-.wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r);max-height:72vh;background:var(--panel);-webkit-overflow-scrolling:touch}
+.wrap{overflow:visible;border:1px solid var(--line);border-radius:var(--r);max-height:none;background:var(--panel);-webkit-overflow-scrolling:touch}
 table{border-collapse:separate;border-spacing:0;width:100%}
 th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap;font-size:13px}
 th{background:rgba(20,24,34,.96);position:sticky;top:0;cursor:pointer;user-select:none;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;z-index:1}
@@ -126,6 +126,13 @@ a[target]{word-break:break-all}
 .seg{display:inline-flex;max-width:100%;gap:4px;background:rgba(255,255,255,.04);border:1px solid var(--line);padding:4px;border-radius:12px;margin:0 0 14px}
 .seg button{border:0;background:transparent;color:var(--muted);padding:7px 14px}
 .seg button:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:12px 0 4px;font-size:13px}
+.pages{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.pages button{padding:6px 11px;min-width:36px}
+.pages button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0f18;border-color:transparent;font-weight:600}
+.pages button:disabled{opacity:.4;cursor:default;background:transparent;border-color:var(--line)}
+.pager label{display:flex;align-items:center;gap:8px}
+select{background:rgba(7,10,16,.7);border:1px solid var(--line);color:var(--text);padding:6px 10px;border-radius:9px;font:inherit;font-size:13px}
 .seg button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0f18;font-weight:600;box-shadow:0 4px 14px -4px rgba(110,168,255,.55)}
 
 /* ---------- full-page table (Containers): no inner scroll box, cells wrap ---------- */

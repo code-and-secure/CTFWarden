@@ -15,13 +15,31 @@ const tgt = (t, ty) => (ty === 'ip' || (!ty && looksIP(t))) ? ipl(t) : (ty === '
 const pct = (v, warn = 80) => v == null ? '–' : `${(+v).toFixed(1)}%<span class="bar"><i style="width:${Math.min(100, v)}%;background:${v >= warn ? 'var(--high)' : 'var(--accent)'}"></i></span>`;
 const pairs = (o, link) => Object.entries(o || {}).map(([k, n]) => `${link ? link(k) : esc(k)}<span class="muted">×${n}</span>`).join(', ');
 
-const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null};
+const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null, page: {}, size: 25};
 
 async function api(p) {
   const r = await fetch(p, {cache: 'no-store', credentials: 'same-origin'});
   if (r.status === 401) { location.replace('/login'); throw new Error('login required'); }
   if (!r.ok) throw new Error(p + ' → HTTP ' + r.status);
   return r.json();
+}
+
+function pager(id, cur, pages, from, total) {
+  const nums = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - cur) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  const btn = p => `<button data-pg="${id}:${p}" class="${p === cur ? 'on' : ''}" ${p === cur ? 'aria-current="page"' : ''}>${p}</button>`;
+  return `<div class="pager">
+      <span class="muted">${total ? from + 1 : 0}–${Math.min(from + S.size, total)} of ${total}</span>
+      <div class="pages">
+        <button data-pg="${id}:${cur - 1}" ${cur <= 1 ? 'disabled' : ''}>‹ Prev</button>
+        ${nums.map(n => n === '…' ? '<span class="muted">…</span>' : btn(n)).join('')}
+        <button data-pg="${id}:${cur + 1}" ${cur >= pages ? 'disabled' : ''}>Next ›</button>
+      </div>
+      <label class="muted">Rows <select data-psz>${[10, 25, 50, 100].map(n => `<option value="${n}" ${n === S.size ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    </div>`;
 }
 
 function grid(id, cols, rows, opt = {}) {
@@ -33,11 +51,22 @@ function grid(id, cols, rows, opt = {}) {
     const c = cols.find(c => c.k === s.k), v = c.v || (x => x[c.k]);
     rows = [...rows].sort((a, b) => { const A = v(a) ?? -1e18, B = v(b) ?? -1e18; return (A > B ? 1 : A < B ? -1 : 0) * s.d; });
   }
-  const max = opt.max || 2000, more = rows.length > max ? `<p class="muted">showing ${max} of ${rows.length} rows – use the filter</p>` : '';
+  let shown = rows, more = '', pg = '';
+  if (opt.nofilter) {                       // small fixed lists (overview, detail views): no paging
+    const max = opt.max || 2000;
+    shown = rows.slice(0, max);
+    if (rows.length > max) more = `<p class="muted">showing ${max} of ${rows.length} rows – use the filter</p>`;
+  } else {
+    const pages = Math.max(1, Math.ceil(rows.length / S.size));
+    const cur = Math.min(Math.max(1, S.page[id] || 1), pages);
+    const from = (cur - 1) * S.size;
+    shown = rows.slice(from, from + S.size);
+    pg = pager(id, cur, pages, from, rows.length);
+  }
   const head = cols.map(c => `<th data-k="${c.k}">${esc(c.l)}${s && s.k === c.k ? (s.d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
-  const body = rows.slice(0, max).map(x => `<tr>${cols.map(c => `<td class="${c.c || ''}" data-label="${esc(c.l)}">${c.f ? c.f(x) : esc(x[c.k])}</td>`).join('')}</tr>`).join('')
+  const body = shown.map(x => `<tr>${cols.map(c => `<td class="${c.c || ''}" data-label="${esc(c.l)}">${c.f ? c.f(x) : esc(x[c.k])}</td>`).join('')}</tr>`).join('')
     || `<tr><td colspan="${cols.length}" class="muted">nothing yet</td></tr>`;
-  return `<div class="wrap${opt.wide ? ' wide' : ''}"><table data-grid="${id}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  return `<div class="wrap wide"><table data-grid="${id}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}${pg}`;
 }
 
 // ---------------------------------------------------------------- columns
@@ -183,7 +212,7 @@ const VIEWS = {
     <h3>Busiest containers</h3>${grid('ov-ct', CTC.slice(0, 7), d.top_cpu, {nofilter: 1})}
     <h3>Data sources</h3>${grid('ov-src', [{k: 'name', l: 'Source'}, {k: 'status', l: 'Status', c: 'w', f: x => `<span class="${String(x.status).startsWith('ok') ? 'ok' : 'bad'}">${esc(x.status)}</span>`}], d.sources, {nofilter: 1})}`;
   }},
-  containers: {url: () => '/api/containers', render: d => grid('ct', CTC, d, {wide: 1})},
+  containers: {url: () => '/api/containers', render: d => grid('ct', CTC, d)},
   ips: {url: () => '/api/ips?limit=5000' + (S.susp ? '&suspicious=1' : ''), render: d =>
     `<div class="seg" role="group" aria-label="IP filter"><button data-susp="0" aria-pressed="${!S.susp}" class="${S.susp ? '' : 'on'}">All IPs</button><button data-susp="1" aria-pressed="${S.susp}" class="${S.susp ? 'on' : ''}">Suspicious only</button></div>${grid('ip', IPC, d)}`},
   alerts: {url: () => '/api/alerts?limit=1000', render: d => grid('al', AL, d)},
@@ -260,7 +289,7 @@ function closeModal() { S.modal = null; $('#modal').hidden = true; load(); }
 // ---------------------------------------------------------------- events
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' || e.target.id === 'close') return closeModal();
-  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],[data-susp]');
+  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],[data-susp],[data-pg]');
   if (!t) return;
   if (t.dataset.tab) {
     S.tab = t.dataset.tab;
@@ -269,6 +298,10 @@ document.addEventListener('click', e => {
   } else if (t.dataset.ip) { openModal('ip', t.dataset.ip); }
   else if (t.dataset.ct) { openModal('ct', t.dataset.ct); }
   else if (t.dataset.susp !== undefined) { S.susp = t.dataset.susp === '1'; load(); }
+  else if (t.dataset.pg) {
+    const [id, n] = t.dataset.pg.split(':');
+    S.page[id] = +n; render();
+  }
   else if (t.dataset.k) {
     const id = t.closest('table').dataset.grid, cur = S.sort[id];
     S.sort[id] = {k: t.dataset.k, d: cur && cur.k === t.dataset.k ? -cur.d : -1};
@@ -276,7 +309,10 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.modal) closeModal(); });
-$('#filter').addEventListener('input', render);
+$('#filter').addEventListener('input', () => { S.page = {}; render(); });
+document.addEventListener('change', e => {
+  if (e.target.dataset.psz !== undefined) { S.size = +e.target.value; S.page = {}; render(); }
+});
 $('#logout').addEventListener('click', async () => {
   await fetch('/api/logout', {method: 'POST', credentials: 'same-origin'}).catch(() => {});
   location.replace('/login');
