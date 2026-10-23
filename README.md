@@ -1,6 +1,8 @@
-# ctfmon: lightweight monitor for a Docker-based CTFd event
+<p align="center"><img src="static/brand/ctfwarden-wordmark.svg" width="420" alt="CTFWarden"></p>
 
-ctfmon is one Python process (~40–80 MB RAM) with no database server and no agents. It has a password-protected web dashboard, JSON and CSV APIs, and history kept in SQLite.
+# CTFWarden: lightweight monitor for a Docker-based CTFd event
+
+CTFWarden is one Python process (~40–80 MB RAM) with no database server and no agents. It has a password-protected web dashboard, JSON and CSV APIs, and history kept in SQLite.
 
 ## What it shows
 
@@ -48,9 +50,9 @@ sudo CTFMON_PASSWORD=... CTFMON_DB=/opt/ctfmon/ctfmon.db python3 ctfmon.py
 
 ## Your setup: host nginx in front of everything (nothing gets changed)
 
-ctfmon **never modifies nginx**. It only reads `/etc/nginx` and `/var/log` through read-only mounts. No config edits are needed, and no reload or restart either.
+CTFWarden **never modifies nginx**. It only reads `/etc/nginx` and `/var/log` through read-only mounts. No config edits are needed, and no reload or restart either.
 
-Players connect to `public-ip:33xxx` (challenges) or to CTFd's port, and host nginx forwards to `127.0.0.1:328xx` or `172.17.0.1:8000`. ctfmon recovers the real player IP for every container from three independent sources:
+Players connect to `public-ip:33xxx` (challenges) or to CTFd's port, and host nginx forwards to `127.0.0.1:328xx` or `172.17.0.1:8000`. CTFWarden recovers the real player IP for every container from three independent sources:
 
 | Source | What it gives |
 |---|---|
@@ -122,7 +124,7 @@ Every public IP gets a location, and every IP that triggers a rule (SSH brute fo
 | SSH: every **username tried**, failed-attempt count, **successful logins with the key fingerprint**, scanner notes | your auth.log |
 | One-click links to AbuseIPDB, Shodan, VirusTotal, GreyNoise, ipinfo, Censys, RDAP/WHOIS (shows the ISP's abuse contact) | – |
 
-What an IP **can't** tell you: the attacker's PC name, username, MAC address or exact street address. None of that travels over SSH or HTTP. Location is city-level at best. If the IP is a VPN/Tor/datacenter, you only learn about the VPN or server, not the person behind it. Most SSH brute force comes from infected servers and botnets, not from the person who controls them. ctfmon only does passive lookups and never probes the attacker's machine.
+What an IP **can't** tell you: the attacker's PC name, username, MAC address or exact street address. None of that travels over SSH or HTTP. Location is city-level at best. If the IP is a VPN/Tor/datacenter, you only learn about the VPN or server, not the person behind it. Most SSH brute force comes from infected servers and botnets, not from the person who controls them. CTFWarden only does passive lookups and never probes the attacker's machine.
 
 Privacy: with `CTFMON_INTEL_SCOPE=all`, players' IPs are sent to ip-api.com. Set it to `flagged` to only look up IPs that triggered a rule, or `CTFMON_INTEL=0` to turn lookups off. Results are cached in SQLite for 7 days (`CTFMON_INTEL_TTL_DAYS`).
 
@@ -135,7 +137,7 @@ iptables -I DOCKER-USER -s 1.2.3.4 -j DROP   # traffic to containers (incl. CTFd
 iptables -I INPUT       -s 1.2.3.4 -j DROP   # host (SSH)
 ```
 
-ctfmon itself is read-only and never blocks anything on its own.
+CTFWarden itself is read-only and never blocks anything on its own.
 
 ## Exports for after the event
 
@@ -143,11 +145,11 @@ ctfmon itself is read-only and never blocks anything on its own.
 
 ## Security notes
 
-- ctfmon needs `docker.sock`, which is root-equivalent even when mounted read-only. Keep it on `127.0.0.1` and use the SSH tunnel.
+- CTFWarden needs `docker.sock`, which is root-equivalent even when mounted read-only. Keep it on `127.0.0.1` and use the SSH tunnel.
 - All log-derived text is HTML-escaped and the page runs under a strict CSP, so a player can't plant XSS in your dashboard through a user agent.
-- `docker exec` events don't record *who* ran them. ctfmon correlates them with `sudo` lines in auth.log. If you work as `root` directly, add `auditd -w /usr/bin/docker -k docker` for full attribution.
+- `docker exec` events don't record *who* ran them. CTFWarden correlates them with `sudo` lines in auth.log. If you work as `root` directly, add `auditd -w /usr/bin/docker -k docker` for full attribution.
 
 ## Good companions (optional)
 
-- **CrowdSec**: reads the same nginx log and can **auto-ban** IPs, which ctfmon deliberately doesn't do.
+- **CrowdSec**: reads the same nginx log and can **auto-ban** IPs, which CTFWarden deliberately doesn't do.
 - **Dozzle**: a live log viewer for any container, useful for debugging a broken challenge.

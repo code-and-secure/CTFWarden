@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ctfmon · sign in</title>
+<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<title>CTFWarden · sign in</title>
 <style>
 :root{
   --bg:#070a10;--panel:rgba(20,24,34,.78);--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.16);
@@ -37,8 +40,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;
 @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 
 .brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;margin-bottom:26px}
-.logo{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 14px 34px -10px rgba(110,168,255,.7)}
-.logo svg{width:28px;height:28px;color:#0b0f18}
+.logo{width:56px;height:56px;border-radius:16px;display:block;margin:0 auto;filter:drop-shadow(0 6px 22px rgba(130,150,255,.45))}
 h1{margin:0;font-size:22px;font-weight:700;letter-spacing:.01em}
 .sub{margin:0;color:var(--muted);font-size:13px}
 
@@ -85,9 +87,9 @@ button[type=submit].busy .spin{display:block;position:absolute;inset:0;margin:au
 
 <main class="card">
   <div class="brand">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <img class="logo" src="/brand/ctfwarden-mark.svg" alt="" width="56" height="56">
     <div>
-      <h1>ctfmon</h1>
+      <h1>CTFWarden</h1>
       <p class="sub">Sign in to the monitor</p>
     </div>
   </div>

@@ -43,7 +43,7 @@ form.addEventListener('submit', async e => {
     const j = await r.json().catch(() => ({}));
     fail(j.error || ('sign in failed (HTTP ' + r.status + ')'));
   } catch (_) {
-    fail('could not reach ctfmon');
+    fail('could not reach CTFWarden');
   } finally {
     btn.disabled = false;
     btn.classList.remove('busy');

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 112" width="470" height="112" role="img" aria-label="CTFWarden">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#73a5ff"/>
+      <stop offset="1" stop-color="#a28dfa"/>
+    </linearGradient>
+    <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#73a5ff"/>
+      <stop offset="1" stop-color="#b9a6ff"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(8 8) scale(0.75)">
+    <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+    <path d="M64 22 L97 34 V61 C97 83 83 98 64 106 C45 98 31 83 31 61 V34 Z" fill="#0b0f18"/>
+    <polyline points="40,66 51,66 56,54 63,82 70,44 76,66 84,66" fill="none" stroke="url(#pulse)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="88" cy="66" r="4.5" fill="#35d29a"/>
+  </g>
+  <text x="124" y="70" font-family="Outfit, Jost, 'Segoe UI', Inter, system-ui, sans-serif" font-size="48" font-weight="700" letter-spacing="-0.5" fill="#e8ecf4">CTF<tspan fill="url(#tile)">Warden</tspan></text>
+  <text x="126" y="94" font-family="Outfit, Jost, 'Segoe UI', Inter, system-ui, sans-serif" font-size="13" font-weight="500" letter-spacing="3" fill="#7f8898">CTF EVENT MONITOR</text>
+</svg>

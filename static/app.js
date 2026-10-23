@@ -37,7 +37,7 @@ function grid(id, cols, rows, opt = {}) {
   const head = cols.map(c => `<th data-k="${c.k}">${esc(c.l)}${s && s.k === c.k ? (s.d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
   const body = rows.slice(0, max).map(x => `<tr>${cols.map(c => `<td class="${c.c || ''}" data-label="${esc(c.l)}">${c.f ? c.f(x) : esc(x[c.k])}</td>`).join('')}</tr>`).join('')
     || `<tr><td colspan="${cols.length}" class="muted">nothing yet</td></tr>`;
-  return `<div class="wrap"><table data-grid="${id}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  return `<div class="wrap${opt.wide ? ' wide' : ''}"><table data-grid="${id}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
 }
 
 // ---------------------------------------------------------------- columns
@@ -183,9 +183,9 @@ const VIEWS = {
     <h3>Busiest containers</h3>${grid('ov-ct', CTC.slice(0, 7), d.top_cpu, {nofilter: 1})}
     <h3>Data sources</h3>${grid('ov-src', [{k: 'name', l: 'Source'}, {k: 'status', l: 'Status', c: 'w', f: x => `<span class="${String(x.status).startsWith('ok') ? 'ok' : 'bad'}">${esc(x.status)}</span>`}], d.sources, {nofilter: 1})}`;
   }},
-  containers: {url: () => '/api/containers', render: d => grid('ct', CTC, d)},
+  containers: {url: () => '/api/containers', render: d => grid('ct', CTC, d, {wide: 1})},
   ips: {url: () => '/api/ips?limit=5000' + (S.susp ? '&suspicious=1' : ''), render: d =>
-    `<p><button id="susp" class="${S.susp ? 'on' : ''}">${S.susp ? 'showing suspicious only' : 'show suspicious only'}</button></p>${grid('ip', IPC, d)}`},
+    `<div class="seg" role="group" aria-label="IP filter"><button data-susp="0" aria-pressed="${!S.susp}" class="${S.susp ? '' : 'on'}">All IPs</button><button data-susp="1" aria-pressed="${S.susp}" class="${S.susp ? 'on' : ''}">Suspicious only</button></div>${grid('ip', IPC, d)}`},
   alerts: {url: () => '/api/alerts?limit=1000', render: d => grid('al', AL, d)},
   events: {url: () => '/api/events?limit=2000', render: d => grid('ev', EVC, d)},
   hits: {url: () => '/api/hits?limit=2000', render: d => grid('hit', HIT, d)},
@@ -260,7 +260,7 @@ function closeModal() { S.modal = null; $('#modal').hidden = true; load(); }
 // ---------------------------------------------------------------- events
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' || e.target.id === 'close') return closeModal();
-  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],#susp');
+  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],[data-susp]');
   if (!t) return;
   if (t.dataset.tab) {
     S.tab = t.dataset.tab;
@@ -268,7 +268,7 @@ document.addEventListener('click', e => {
     render(); load();
   } else if (t.dataset.ip) { openModal('ip', t.dataset.ip); }
   else if (t.dataset.ct) { openModal('ct', t.dataset.ct); }
-  else if (t.id === 'susp') { S.susp = !S.susp; load(); }
+  else if (t.dataset.susp !== undefined) { S.susp = t.dataset.susp === '1'; load(); }
   else if (t.dataset.k) {
     const id = t.closest('table').dataset.grid, cur = S.sort[id];
     S.sort[id] = {k: t.dataset.k, d: cur && cur.k === t.dataset.k ? -cur.d : -1};

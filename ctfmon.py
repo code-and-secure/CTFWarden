@@ -45,7 +45,7 @@ except ImportError:  # allows offline testing of the parsers
 
 logging.basicConfig(level=os.environ.get("CTFMON_LOGLEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("ctfmon")
+log = logging.getLogger("CTFWarden")
 
 
 # =================================================================== config
@@ -331,7 +331,7 @@ def post_webhook(a):
     if len(_wh_times) == _wh_times.maxlen and now - _wh_times[0] < 60:
         return                                    # max 20 webhook posts / minute
     _wh_times.append(now)
-    text = f"[ctfmon {a['sev'].upper()}] {a['kind']} | {a['target']} | {a['msg']}"[:1900]
+    text = f"[CTFWarden {a['sev'].upper()}] {a['kind']} | {a['target']} | {a['msg']}"[:1900]
     if "discord" in WEBHOOK:
         body = {"content": text, "allowed_mentions": {"parse": []}}   # attacker text can't @everyone
     elif "slack" in WEBHOOK:
@@ -339,7 +339,7 @@ def post_webhook(a):
     else:
         body = {"text": text, "content": text, "alert": a}
     req = urllib.request.Request(WEBHOOK, data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json", "User-Agent": "ctfmon"})
+                                 headers={"Content-Type": "application/json", "User-Agent": "CTFWarden"})
     try:
         urllib.request.urlopen(req, timeout=10).read()
     except Exception as e:
@@ -1537,7 +1537,7 @@ def is_public(ip):
 
 def _http_json(url, data=None, headers=None, timeout=8):
     body = json.dumps(data).encode() if data is not None else None
-    h = {"User-Agent": "ctfmon", "Accept": "application/json", **(headers or {})}
+    h = {"User-Agent": "CTFWarden", "Accept": "application/json", **(headers or {})}
     if body is not None:
         h["Content-Type"] = "application/json"
     with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=h), timeout=timeout) as r:
@@ -1654,7 +1654,7 @@ def lookup_now(ip):
 
 def refresh_tor():
     try:
-        req = urllib.request.Request("https://check.torproject.org/torbulkexitlist", headers={"User-Agent": "ctfmon"})
+        req = urllib.request.Request("https://check.torproject.org/torbulkexitlist", headers={"User-Agent": "CTFWarden"})
         with urllib.request.urlopen(req, timeout=20) as r:
             ips = {norm_ip(x) for x in r.read().decode().split() if ip_obj(x)}
         if ips:
@@ -1903,6 +1903,11 @@ def asset(name):
         return f.read()
 
 
+BRAND = {"favicon.svg": "image/svg+xml", "favicon-32.png": "image/png", "apple-touch-icon.png": "image/png",
+         "ctfwarden-512.png": "image/png", "ctfwarden-mark.svg": "image/svg+xml",
+         "ctfwarden-wordmark.svg": "image/svg+xml"}
+
+
 AUTH_FAILS = defaultdict(lambda: deque(maxlen=30))
 SESSIONS = {}                        # session token -> expiry (epoch seconds), kept in memory only
 SESS_LOCK = threading.Lock()
@@ -1911,7 +1916,7 @@ SESSION_COOKIE = "ctfmon_session"
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ctfmon"
+    server_version = "CTFWarden"
     sys_version = ""
 
     def log_message(self, *a):
@@ -1999,6 +2004,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, asset("login.html"), "text/html; charset=utf-8")
         if u.path == "/login.js":
             return self.send(200, asset("login.js"), "application/javascript; charset=utf-8")
+        if u.path.startswith("/brand/") and u.path[7:] in BRAND:      # logo + icons, needed before login
+            return self.send(200, asset("brand/" + u.path[7:]), BRAND[u.path[7:]])
         if not self.authed():
             if u.path.startswith(("/api/", "/export/")):
                 return self.send(401, json.dumps({"error": "login required"}), "application/json")
@@ -2113,7 +2120,7 @@ def main():
         SOURCES["auth-log"] = "not found (mount /var/log or set CTFMON_AUTH_LOG)"
     Server.address_family = socket.AF_INET6 if ":" in LISTEN else socket.AF_INET
     srv = Server((LISTEN, PORT), Handler)
-    log.info("ctfmon listening on http://%s:%d  (user: %s)", LISTEN, PORT, USER)
+    log.info("CTFWarden listening on http://%s:%d  (user: %s)", LISTEN, PORT, USER)
     if GENERATED_PW:
         log.warning("no CTFMON_PASSWORD set - generated one for this run: %s", PASSWORD)
     try:

@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ctfmon</title>
+<link rel="icon" type="image/svg+xml" href="/brand/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<title>CTFWarden</title>
 <style>
 :root{
   --bg:#070a10;--bg2:#0b0f18;--panel:rgba(20,24,34,.72);--panel-solid:#141822;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
@@ -27,8 +30,7 @@ body{margin:0;min-height:100vh;background:
 header{position:sticky;top:0;z-index:5;background:rgba(10,13,20,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
   border-bottom:1px solid var(--line);padding:10px clamp(12px,3vw,24px);display:flex;gap:12px 18px;align-items:center;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:16px;white-space:nowrap}
-.logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 6px 20px -6px rgba(110,168,255,.6)}
-.logo svg{width:17px;height:17px;color:#0b0f18}
+.logo{width:30px;height:30px;border-radius:9px;display:block;flex:none;filter:drop-shadow(0 4px 12px rgba(130,150,255,.4))}
 .live{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:pulse 2s infinite;flex:none}
 .live.off{background:var(--high);animation:none}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
@@ -120,6 +122,26 @@ td.geo{white-space:normal;min-width:240px;max-width:380px}
 .kv>div:nth-child(odd){color:var(--muted);background:rgba(255,255,255,.02);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 a[target]{word-break:break-all}
 
+/* ---------- segmented control (IP view) ---------- */
+.seg{display:inline-flex;max-width:100%;gap:4px;background:rgba(255,255,255,.04);border:1px solid var(--line);padding:4px;border-radius:12px;margin:0 0 14px}
+.seg button{border:0;background:transparent;color:var(--muted);padding:7px 14px}
+.seg button:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.seg button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0f18;font-weight:600;box-shadow:0 4px 14px -4px rgba(110,168,255,.55)}
+
+/* ---------- full-page table (Containers): no inner scroll box, cells wrap ---------- */
+.wrap.wide{max-height:none;overflow:visible;background:none;border:0}
+.wrap.wide table{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.wrap.wide th,.wrap.wide td{white-space:normal}
+.wrap.wide th{position:static}
+@media (max-width:1000px){
+  .wrap.wide table,.wrap.wide tbody,.wrap.wide tr,.wrap.wide td{display:block;width:100%}
+  .wrap.wide table{border:0;background:none}
+  .wrap.wide thead{display:none}
+  .wrap.wide tbody tr{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;padding:4px 14px}
+  .wrap.wide td{border:0;padding:6px 0;min-width:0;max-width:none;word-break:break-word}
+  .wrap.wide td::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:2px}
+}
+
 /* ---------- small screens: tables become stacked cards ---------- */
 @media (max-width:760px){
   header{padding:10px 12px;gap:10px}
@@ -154,8 +176,8 @@ a[target]{word-break:break-all}
 <body>
 <header>
   <div class="brand">
-    <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
-    ctfmon <span id="live" class="live" title="live"></span>
+    <img class="logo" src="/brand/ctfwarden-mark.svg" alt="" width="30" height="30">
+    CTFWarden <span id="live" class="live" title="live"></span>
   </div>
   <nav id="tabs">
     <button data-tab="overview" class="on">Overview</button>
