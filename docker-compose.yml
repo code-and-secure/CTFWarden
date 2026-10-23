@@ -1,0 +1,40 @@
+services:
+  ctfmon:
+    build: .
+    container_name: ctfmon
+    restart: unless-stopped
+    network_mode: host          # needed to see the host's conntrack table (who -> which container)
+    cap_add: [NET_ADMIN]        # needed to read conntrack
+    mem_limit: 300m
+    cpus: 0.5
+    environment:
+      CTFMON_PASSWORD: "admin"
+      CTFMON_LISTEN: "0.0.0.0"          # reach it with an SSH tunnel (see README)
+      CTFMON_PORT: "9999"
+      CTFMON_LOG_CONTAINERS: ""          # not used: host nginx in /etc/nginx handles everything
+      # host nginx is only READ (config + existing access logs, auto-discovered). Nothing is changed.
+      CTFMON_NGINX_CONF: "/host/etc/nginx"
+      CTFMON_LOG_FILES: ""                # extra log files only if nginx writes logs somewhere unusual
+      # the VM's public IP (Azure NATs it, so it isn't on the interface) - optional but recommended
+      CTFMON_PUBLIC_IP: "52.186.181.112"
+      # your own / admin IPs - never flagged (comma separated, CIDR ok)
+      CTFMON_TRUSTED: "172.16.0.0/29,::1/128"
+      # Discord or Slack incoming-webhook URL for HIGH alerts (optional)
+      CTFMON_WEBHOOK: ""
+      # Places challenges are ALLOWED to connect to (container name, ip:port or :port).
+      # If your challenges call the flag validator, keep it here, otherwise every instance alerts.
+      CTFMON_LINK_ALLOW: "container-dynamic-flag-validator-flagvalidator-1,:9512"
+      # docker exec commands run by your own automation (regex), e.g. "^/bin/sh -c echo .* > /flag"
+      CTFMON_EXEC_IGNORE: "^$"
+      # set to 1 only if CTFd sits behind your own load balancer / Cloudflare
+      CTFMON_TRUST_XFF: "0"
+      # --- attacker lookups: country / city / ISP / ASN / reverse DNS / VPN / Tor / datacenter / abuse reputation
+      CTFMON_INTEL: "1"                  # 0 = never send IPs to outside lookup services
+      CTFMON_INTEL_SCOPE: "all"          # all = geolocate every visitor, flagged = only IPs that triggered a rule
+      CTFMON_PROXYCHECK_KEY: ""          # optional free key from proxycheck.io (VPN provider names; 1000/day instead of 100)
+      CTFMON_ABUSEIPDB_KEY: ""           # optional free key from abuseipdb.com (worldwide abuse reports, 1000/day)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/host/var/log:ro         # auth.log (SSH/sudo) + host nginx logs
+      - /etc/nginx:/host/etc/nginx:ro     # host nginx config: public port -> container map
+      - ./data:/data                      # SQLite history

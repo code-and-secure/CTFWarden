@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ctfmon</title>
+<style>
+:root{
+  --bg:#070a10;--bg2:#0b0f18;--panel:rgba(20,24,34,.72);--panel-solid:#141822;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
+  --text:#e6eaf2;--muted:#8891a4;--accent:#6ea8ff;--accent2:#a78bfa;
+  --high:#ff5c7a;--medium:#ffb547;--low:#5ec8ff;--ok:#34d399;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:14px;
+}
+:root:not([data-theme="light"]){color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:
+  radial-gradient(1100px 620px at 8% -12%,rgba(110,168,255,.14),transparent 60%),
+  radial-gradient(900px 540px at 100% 0%,rgba(167,139,250,.11),transparent 60%),
+  var(--bg);
+  background-attachment:fixed;color:var(--text);font:14px/1.5 var(--ui)}
+::selection{background:rgba(110,168,255,.35)}
+
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:5;background:rgba(10,13,20,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);padding:10px clamp(12px,3vw,24px);display:flex;gap:12px 18px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:16px;white-space:nowrap}
+.logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 6px 20px -6px rgba(110,168,255,.6)}
+.logo svg{width:17px;height:17px;color:#0b0f18}
+.live{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:pulse 2s infinite;flex:none}
+.live.off{background:var(--high);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+nav#tabs{display:flex;gap:4px;background:rgba(255,255,255,.04);border:1px solid var(--line);padding:4px;border-radius:12px;overflow-x:auto;scrollbar-width:none;max-width:100%}
+nav#tabs::-webkit-scrollbar{display:none}
+.right{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;min-width:0}
+.muted{color:var(--muted)}
+#upd{font-size:12px;white-space:nowrap}
+
+/* ---------- controls ---------- */
+button{background:transparent;border:1px solid var(--line);color:var(--text);padding:7px 13px;border-radius:9px;cursor:pointer;font:inherit;font-size:13px;white-space:nowrap;transition:background .15s,border-color .15s,color .15s,transform .05s}
+button:hover{border-color:var(--line2);background:rgba(255,255,255,.04)}
+button:active{transform:translateY(1px)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.on,nav#tabs button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b0f18;border-color:transparent;font-weight:600;box-shadow:0 4px 14px -4px rgba(110,168,255,.55)}
+nav#tabs button{border:0;background:transparent;padding:7px 12px;color:var(--muted)}
+nav#tabs button:hover{color:var(--text);background:rgba(255,255,255,.05)}
+input{background:rgba(7,10,16,.7);border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:9px;font:inherit;font-size:13px;min-width:200px;transition:border-color .15s}
+input:focus{outline:none;border-color:var(--accent)}
+input::placeholder{color:var(--muted)}
+a{color:var(--accent);cursor:pointer;text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ---------- layout ---------- */
+main{padding:clamp(12px,2.5vw,24px);max-width:1600px;margin:0 auto}
+h2{margin:0 0 14px;font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h3{margin:26px 0 10px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:1px 6px;word-break:break-all}
+
+/* ---------- hero + stat cards ---------- */
+.hero{position:relative;overflow:hidden;border-radius:var(--r);padding:18px 20px;border:1px solid var(--line);display:flex;align-items:center;gap:16px;margin-bottom:14px;background:var(--panel)}
+.hero::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.9}
+.hero.calm::before{background:linear-gradient(120deg,rgba(52,211,153,.16),transparent 55%)}
+.hero.danger::before{background:linear-gradient(120deg,rgba(255,92,122,.22),transparent 55%)}
+.hero.danger{border-color:rgba(255,92,122,.35)}
+.hero .ic{position:relative;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;flex:none}
+.hero.calm .ic{background:rgba(52,211,153,.14);color:var(--ok)}
+.hero.danger .ic{background:rgba(255,92,122,.16);color:var(--high)}
+.hero .ic svg{width:22px;height:22px}
+.hero b{position:relative;display:block;font-size:17px;font-weight:700}
+.hero span{position:relative;color:var(--muted);font-size:13px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(150px,30vw,200px),1fr));gap:12px;margin-bottom:6px}
+.card{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px 13px;transition:transform .2s,border-color .2s}
+.card:hover{transform:translateY(-2px);border-color:var(--line2)}
+.card::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.7}
+.card.t-high::after{background:var(--high);opacity:1}
+.card.t-warn::after{background:var(--medium);opacity:1}
+.card.t-ok::after{background:var(--ok);opacity:.8}
+.card .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.card .v{font-family:var(--mono);font-size:clamp(22px,4vw,28px);font-weight:700;margin:6px 0 4px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.card.t-high .v{color:var(--high)}
+.card .s{color:var(--muted);font-size:12px}
+.card.t-high .v,.card.t-warn .v{text-shadow:0 0 22px currentColor}
+
+/* ---------- badges & bars ---------- */
+.b{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid;margin:1px 3px 1px 0;background:rgba(255,255,255,.02);white-space:nowrap}
+.high{color:var(--high);border-color:rgba(255,92,122,.5);background:rgba(255,92,122,.08)}
+.medium{color:var(--medium);border-color:rgba(255,181,71,.5);background:rgba(255,181,71,.08)}
+.low{color:var(--low);border-color:rgba(94,200,255,.45);background:rgba(94,200,255,.07)}
+.info{color:var(--muted);border-color:var(--line)}
+.ok{color:var(--ok)}
+.bad{color:var(--high)}
+.bar{height:5px;width:60px;background:rgba(255,255,255,.07);border-radius:3px;display:inline-block;vertical-align:middle;margin-left:8px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+
+/* ---------- tables ---------- */
+.wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r);max-height:72vh;background:var(--panel);-webkit-overflow-scrolling:touch}
+table{border-collapse:separate;border-spacing:0;width:100%}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap;font-size:13px}
+th{background:rgba(20,24,34,.96);position:sticky;top:0;cursor:pointer;user-select:none;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;z-index:1}
+th:hover{color:var(--text)}
+tbody tr{transition:background .12s}
+tbody tr:hover td{background:rgba(110,168,255,.05)}
+tbody tr:last-child td{border-bottom:0}
+td.w{white-space:normal;word-break:break-word;min-width:200px;max-width:520px;font-family:var(--mono);font-size:12px}
+td.geo{white-space:normal;min-width:240px;max-width:380px}
+
+/* ---------- detail modal ---------- */
+#modal{position:fixed;inset:0;background:rgba(3,5,9,.7);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;justify-content:center;align-items:flex-start;padding:clamp(8px,3vw,40px);overflow:auto;z-index:9;animation:fade .18s ease}
+#modal[hidden]{display:none}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.box{background:var(--bg2);border:1px solid var(--line2);border-radius:18px;padding:clamp(16px,3vw,26px);width:min(1200px,100%);position:relative;box-shadow:0 30px 80px -20px rgba(0,0,0,.7);animation:rise .22s ease}
+@keyframes rise{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
+#close{position:absolute;top:14px;right:14px;width:34px;height:34px;padding:0;display:grid;place-items:center;font-size:15px}
+.kv{display:grid;grid-template-columns:minmax(130px,190px) 1fr;gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kv>div{padding:9px 14px;border-bottom:1px solid var(--line);word-break:break-word;font-size:13px}
+.kv>div:nth-last-child(-n+2){border-bottom:0}
+.kv>div:nth-child(odd){color:var(--muted);background:rgba(255,255,255,.02);font-size:12px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+a[target]{word-break:break-all}
+
+/* ---------- small screens: tables become stacked cards ---------- */
+@media (max-width:760px){
+  header{padding:10px 12px;gap:10px}
+  nav#tabs{order:3;width:100%}
+  nav#tabs button{flex:0 0 auto}
+  .right{margin-left:0;width:100%;justify-content:space-between}
+  .right input{flex:1 1 100%;min-width:0;order:-1}
+  #upd{margin-left:auto}
+  .exports{display:none}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .card .v{font-size:22px}
+  .wrap{border:0;background:none;max-height:none;overflow:visible}
+  table,tbody,tr,td{display:block;width:100%}
+  thead{display:none}
+  tbody tr{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;padding:4px 14px}
+  tbody tr:hover td{background:none}
+  td,td.w,td.geo{display:block;white-space:normal;min-width:0;max-width:none;border:0;padding:6px 0;text-align:left;font-size:13px;word-break:break-word}
+  td::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;margin-bottom:2px}
+  td:not([data-label]){justify-content:center;text-align:center;color:var(--muted)}
+  .kv{grid-template-columns:1fr}
+  .kv>div:nth-child(odd){border-bottom:0;padding-bottom:2px}
+  .kv>div:nth-child(even){padding-top:2px}
+  #modal{padding:0}
+  .box{border-radius:0;min-height:100vh;border:0;padding:18px 16px 40px}
+  #close{top:10px;right:10px}
+  h2{padding-right:44px}
+}
+@media (max-width:380px){ .cards{grid-template-columns:1fr} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    ctfmon <span id="live" class="live" title="live"></span>
+  </div>
+  <nav id="tabs">
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="containers">Containers</button>
+    <button data-tab="ips">IPs</button>
+    <button data-tab="alerts">Alerts</button>
+    <button data-tab="events">Docker events</button>
+    <button data-tab="hits">Detections</button>
+  </nav>
+  <div class="right">
+    <input id="filter" type="search" placeholder="filter rows…" aria-label="filter rows">
+    <span class="exports muted" style="font-size:12px">export: <a href="/export/ips.csv">ips</a> · <a href="/export/access.csv">access</a> · <a href="/export/alerts.csv">alerts</a></span>
+    <span id="upd" class="muted"></span>
+    <button id="logout">Log out</button>
+  </div>
+</header>
+<main id="content"><p class="muted">loading…</p></main>
+<div id="modal" hidden><div class="box"><button id="close" aria-label="close">✕</button><div id="mbody"></div></div></div>
+<script src="/app.js"></script>
+</body>
+</html>
