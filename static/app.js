@@ -15,7 +15,7 @@ const tgt = (t, ty) => (ty === 'ip' || (!ty && looksIP(t))) ? ipl(t) : (ty === '
 const pct = (v, warn = 80) => v == null ? '–' : `${(+v).toFixed(1)}%<span class="bar"><i style="width:${Math.min(100, v)}%;background:${v >= warn ? 'var(--high)' : 'var(--accent)'}"></i></span>`;
 const pairs = (o, link) => Object.entries(o || {}).map(([k, n]) => `${link ? link(k) : esc(k)}<span class="muted">×${n}</span>`).join(', ');
 
-const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null, page: {}, size: 25, mapAll: false, map: null};
+const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null, page: {}, size: 25, mapAll: true, map: null};
 
 async function api(p) {
   const r = await fetch(p, {cache: 'no-store', credentials: 'same-origin'});
@@ -207,7 +207,7 @@ function buildMap(world) {
       <g class="land">${world.map(c => `<path data-cc="${esc(c.c)}" data-n="${esc(c.n)}" d="${c.p.map(p => p.map(ring).join('')).join('')}"><title>${esc(c.n)}</title></path>`).join('')}</g>
       <g class="pts"></g><g class="arcs"></g></svg>
     <div class="amap-labels"></div><div class="amap-empty" hidden>No attacks in this window – sources light up here as they are detected.</div>
-    <div class="amap-legend"><span><i class="s-high"></i>High</span><span><i class="s-medium"></i>Medium</span><span><i class="s-low"></i>Low (challenge)</span><span><i class="s-home"></i>Your server</span><span>Few <b class="scale"></b> Many</span></div>`;
+    <div class="amap-legend"><span><i class="s-high"></i>High</span><span><i class="s-medium"></i>Medium</span><span><i class="s-low"></i>Low (challenge)</span><span><i class="s-info"></i>Access / login</span><span><i class="s-trusted"></i>Trusted (you)</span><span><i class="s-home"></i>Your server</span><span>Few <b class="scale"></b> Many</span></div>`;
   const land = new Map();
   el.querySelectorAll('.land path').forEach(p => land.set(p.dataset.cc, [...(land.get(p.dataset.cc) || []), p]));
   const q = s => el.querySelector(s);
@@ -232,21 +232,24 @@ function updateMap(M, m) {
     const locs = new Map(), now = Date.now() / 1000;
     for (const p of m.points) {
       const k = p.lat.toFixed(1) + ',' + p.lon.toFixed(1);
-      if (!locs.has(k)) locs.set(k, {xy: proj(p.lon, p.lat), cc: p.cc, city: p.city || p.country, n: 0, ips: 0, sev: 'low', last: 0});
+      if (!locs.has(k)) locs.set(k, {xy: proj(p.lon, p.lat), cc: p.cc, city: p.city || p.country, n: 0, ips: 0, sev: 'info', last: 0, trusted: true});
       const L = locs.get(k);
-      L.n += p.n; L.ips++; L.last = Math.max(L.last, p.last);
+      L.n += p.n; L.ips++; L.last = Math.max(L.last, p.last); L.trusted = L.trusted && p.trusted;
       if (R[p.sev] > R[L.sev]) L.sev = p.sev;
     }
-    const svg = [], lab = [], placed = [];
+    const svg = [], lab = [], boxes = [];
     for (const L of locs.values()) {
-      const [x, y] = L.xy.map(f1), r = f1(1.8 + Math.min(4, Math.log1p(L.n)));
-      if (now - L.last < 300) svg.push(`<circle class="ring s-${esc(L.sev)}" cx="${x}" cy="${y}" r="${r}"/>`);
-      svg.push(`<circle class="pt s-${esc(L.sev)}" cx="${x}" cy="${y}" r="${r}"><title>${esc(L.city || '?')} ${esc(L.cc || '')}: ${L.n} attacks from ${L.ips} IP${L.ips === 1 ? '' : 's'}</title></circle>`);
+      const [x, y] = L.xy.map(f1), r = f1(1.8 + Math.min(4, Math.log1p(L.n))), cls = L.trusted ? 'trusted' : esc(L.sev);
+      if (now - L.last < 300) svg.push(`<circle class="ring s-${cls}" cx="${x}" cy="${y}" r="${r}"/>`);
+      svg.push(`<circle class="pt s-${cls}" cx="${x}" cy="${y}" r="${r}"><title>${esc(L.city || '?')} ${esc(L.cc || '')}: ${L.n} events from ${L.ips} IP${L.ips === 1 ? '' : 's'}${L.trusted ? ' (trusted)' : ''}</title></circle>`);
     }
+    // labels sit right of their dot (left of it near the right edge); skip any whose box would overlap a placed one
     const label = ([x, y], cc, name, cls) => {
-      if (placed.some(([lx, ly]) => Math.abs(lx - x) < 115 * px && Math.abs(ly - y) < 22 * px)) return;
-      placed.push([x, y]);
-      lab.push(`<div class="mlabel ${cls}${x > MW * .8 ? ' flip' : ''}" style="left:${(x / MW * 100).toFixed(2)}%;top:${(y / MH * 100).toFixed(2)}%">${flag(cc)}${esc(name || '?')} <small>${esc(cc || '')}</small></div>`);
+      const flip = x > MW * .8, w = (20 + 6.5 * ((name || '?').length + (cc || '').length + 2)) * px, h = 22 * px;
+      const b = flip ? [x - 9 * px - w, x - 9 * px] : [x + 9 * px, x + 9 * px + w];
+      if (boxes.some(([l, r, t]) => b[0] < r && l < b[1] && Math.abs(t - y) < h)) return;
+      boxes.push([b[0], b[1], y]);
+      lab.push(`<div class="mlabel ${cls}${flip ? ' flip' : ''}" style="left:${(x / MW * 100).toFixed(2)}%;top:${(y / MH * 100).toFixed(2)}%">${flag(cc)}${esc(name || '?')} <small>${esc(cc || '')}</small></div>`);
     };
     if (H) {
       svg.push(`<circle class="ring s-home" cx="${f1(H[0])}" cy="${f1(H[1])}" r="3.5"/><circle class="pt s-home" cx="${f1(H[0])}" cy="${f1(H[1])}" r="3.5"><title>your server</title></circle>`);
@@ -272,7 +275,7 @@ function updateMap(M, m) {
 
 function shoot(M, f, H) {
   if (REDUCED || !M.el.isConnected) return;
-  const [x1, y1] = proj(f.lon, f.lat), g = svgEl('g', {class: 'shot s-' + (f.sev || 'low')}, M.arcs);
+  const [x1, y1] = proj(f.lon, f.lat), g = svgEl('g', {class: 'shot s-' + (f.trusted ? 'trusted' : f.sev || 'info')}, M.arcs);
   if (H && Math.hypot(H[0] - x1, H[1] - y1) > 4) {
     const [x2, y2] = H, d = Math.hypot(x2 - x1, y2 - y1);
     const p = svgEl('path', {class: 'arc', d: `M${f1(x1)},${f1(y1)} Q${f1((x1 + x2) / 2)},${f1(Math.max(4, Math.min(y1, y2) - d * .35))} ${f1(x2)},${f1(y2)}`}, g);
@@ -298,12 +301,14 @@ function mountMap(m) {
   updateMap(S.map, m);
 }
 
+const MAP_TARGETS = {'host-ssh': 'host SSH', ctfwarden: 'CTFWarden dashboard'};
+const mapTarget = t => MAP_TARGETS[t] || ctl(t);
 const clock = t => `<span title="${esc(tm(t))}">${new Date(t * 1000).toLocaleTimeString()}</span>`;
 const FEED = [
   {k: 'ts', l: 'Time', f: x => clock(x.ts)},
-  {k: 'rule', l: 'Attack'},
-  {k: 'ip', l: 'Source', c: 'geo', f: x => `${flag(x.cc)} ${esc(x.city || x.country || 'not located yet')} <span class="muted">${esc(x.cc || '')}</span> · ${ipl(x.ip)}`, v: x => x.cc || ''},
-  {k: 'target', l: 'Target', f: x => x.target === 'host-ssh' ? 'host SSH' : ctl(x.target)},
+  {k: 'rule', l: 'Activity'},
+  {k: 'ip', l: 'Source', c: 'geo', f: x => `${flag(x.cc)} ${esc(x.city || x.country || 'not located yet')} <span class="muted">${esc(x.cc || '')}</span> · ${ipl(x.ip)}${x.trusted ? ' <span class="b ok">trusted</span>' : ''}`, v: x => x.cc || ''},
+  {k: 'target', l: 'Target', f: x => mapTarget(x.target)},
   {k: 'sev', l: 'Sev', f: x => sev(x.sev), v: x => R[x.sev]},
 ];
 const rank = (rows, max, row) => rows.length
@@ -312,17 +317,17 @@ const rank = (rows, max, row) => rows.length
 
 function mapHead(m) {
   const win = m.since > Date.now() / 1000 - 86280 ? 'since ' + new Date(m.since * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'last 24 h';
-  const chip = (v, l) => `<span class="chip"><b>${esc(v)}</b>${esc(l)}</span>`;
-  return {win, head: `<h3><span class="live"></span>Live attack map</h3>
-    <div class="chips">${chip(m.attacks, 'attacks · ' + win)}${chip(m.attacks_1h, 'last hour')}${chip(m.attackers, 'attacker IPs')}${chip(m.countries.length, 'countries')}</div>
-    <div class="seg" role="group" aria-label="attack map scope"><button data-mapall="0" aria-pressed="${!S.mapAll}" class="${S.mapAll ? '' : 'on'}">Platform attacks</button><button data-mapall="1" aria-pressed="${S.mapAll}" class="${S.mapAll ? 'on' : ''}">+ challenge traffic</button></div>`};
+  const chip = (v, l) => `<span class="chip"><b>${esc(v)}</b>${esc(l)}</span>`, all = S.mapAll;
+  return {win, head: `<h3><span class="live"></span>Live ${all ? 'activity' : 'attack'} map</h3>
+    <div class="chips">${chip(m.attacks, (all ? 'events · ' : 'attacks · ') + win)}${chip(m.attacks_1h, 'last hour')}${chip(m.attackers, all ? 'source IPs' : 'attacker IPs')}${chip(m.countries.length, 'countries')}</div>
+    <div class="seg" role="group" aria-label="map scope"><button data-mapall="1" aria-pressed="${all}" class="${all ? 'on' : ''}">All activity</button><button data-mapall="0" aria-pressed="${!all}" class="${all ? '' : 'on'}">Attacks only</button></div>`};
 }
 
 function mapSide(m, win) {
-  const c = m.countries.slice(0, 10), r = m.rules, t = m.targets;
-  return `<div class="rank"><h4>Top attacking countries <span>${esc(win)}</span></h4>${rank(c, c[0]?.n, x => `${flag(x.cc)}<span class="nm">${esc(x.country || x.cc)}</span><span class="muted">${x.ips} IP${x.ips === 1 ? '' : 's'}</span>`)}</div>
-    <div class="rank alt"><h4>Top attack types</h4>${rank(r, r[0]?.n, x => `<span class="nm">${esc(x.rule)}</span>`)}</div>
-    <div class="rank alt"><h4>Most targeted</h4>${rank(t, t[0]?.n, x => `<span class="nm">${x.target === 'host-ssh' ? 'host SSH' : ctl(x.target)}</span>`)}</div>`;
+  const c = m.countries.slice(0, 10), r = m.rules, t = m.targets, all = S.mapAll;
+  return `<div class="rank"><h4>${all ? 'Top source countries' : 'Top attacking countries'} <span>${esc(win)}</span></h4>${rank(c, c[0]?.n, x => `${flag(x.cc)}<span class="nm">${esc(x.country || x.cc)}</span><span class="muted">${x.ips} IP${x.ips === 1 ? '' : 's'}</span>`)}</div>
+    <div class="rank alt"><h4>${all ? 'Top activity types' : 'Top attack types'}</h4>${rank(r, r[0]?.n, x => `<span class="nm">${esc(x.rule)}</span>`)}</div>
+    <div class="rank alt"><h4>Most targeted</h4>${rank(t, t[0]?.n, x => `<span class="nm">${mapTarget(x.target)}</span>`)}</div>`;
 }
 
 // ---------------------------------------------------------------- views
@@ -335,19 +340,20 @@ const hero = c => c.suspicious > 0
 
 const VIEWS = {
   // the overview keeps a fixed shell so the live map is never torn down (its animations would restart every poll)
-  overview: {url: () => '/api/overview' + (S.mapAll ? '?all=1' : ''), mount: d => {
+  overview: {url: () => '/api/overview' + (S.mapAll ? '' : '?map=attacks'), mount: d => {
     if (!$('#ov')) $('#content').innerHTML = `<div id="ov"><div id="ov-a"></div>
       <section class="amap"><div class="amap-head" id="amap-head"></div>
-        <div class="amap-body"><div id="mapslot"><p class="muted">loading map…</p></div><aside class="amap-side" id="amap-side"></aside></div>
-        <p class="muted amap-note" id="amap-note"></p><div id="amap-feed"></div></section>
+        <div class="amap-body"><div class="amap-main"><div id="mapslot"><p class="muted">loading map…</p></div>
+          <p class="muted amap-note" id="amap-note"></p><div id="amap-feed"></div></div>
+          <aside class="amap-side" id="amap-side"></aside></div></section>
       <div id="ov-b"></div></div>`;
     const m = d.map, {win, head} = mapHead(m);
     $('#amap-head').innerHTML = head;
     $('#amap-side').innerHTML = mapSide(m, win);
     $('#amap-note').innerHTML = [
-      m.unlocated ? `${m.unlocated} attacker IP${m.unlocated === 1 ? '' : 's'} not on the map yet (waiting for geolocation, or CTFMON_INTEL=0).` : '',
+      m.unlocated ? `${m.unlocated} IP${m.unlocated === 1 ? '' : 's'} not on the map yet (waiting for geolocation, private address, or CTFMON_INTEL=0).` : '',
       m.home ? '' : 'Server location unknown, so no arcs are drawn: set <code>CTFMON_MAP_HOME=lat,lon</code>.'].filter(Boolean).join(' ');
-    $('#amap-feed').innerHTML = `<h3>Real-time attacks</h3>${grid('ov-feed', FEED, m.feed.slice(0, 12), {nofilter: 1})}`;
+    $('#amap-feed').innerHTML = `<h3>Real-time ${S.mapAll ? 'activity' : 'attacks'}</h3>${grid('ov-feed', FEED, m.feed.slice(0, 10), {nofilter: 1})}`;
     const [a, b] = VIEWS.overview.render(d);
     $('#ov-a').innerHTML = a;
     $('#ov-b').innerHTML = b;

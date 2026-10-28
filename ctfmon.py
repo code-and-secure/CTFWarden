@@ -126,6 +126,8 @@ HIT_Q = []
 LAST_HIT, ALERT_COOL = {}, {}
 MAP_HITS = deque(maxlen=20000)      # recent medium/high detections (ts, ip, sev, rule, target) for the live map
 MAP_LOW = deque(maxlen=5000)        # recent low (challenge) detections, kept apart so they can't push out the above
+MAP_ACT = deque(maxlen=20000)       # recent plain activity: SSH logins/attempts, connections and requests to containers
+ACT_SEEN = {}                       # (ip, kind, target) -> ts, so activity is recorded at most once a minute
 COUNTERS = Counter()
 REQ_MIN = {"m": 0, "cur": 0, "prev": 0}
 STARTED = time.time()
@@ -175,6 +177,19 @@ def in_nets(ip, nl):
 
 def is_trusted(ip):
     return in_nets(ip, TRUSTED)
+
+
+def activity(ip, kind, target, now, sev="info"):
+    """note any access for the live map (once per ip/kind/target per minute; login events always)"""
+    o = ip_obj(ip)
+    if not o or o.is_loopback or ip in LOCAL_IPS:
+        return
+    key = (ip, kind, target)
+    with LOCK:
+        if kind != "ssh-login" and now - ACT_SEEN.get(key, 0) < 60:
+            return
+        ACT_SEEN[key] = now
+        MAP_ACT.append((now, ip, sev, kind, target))
 
 
 def role(name):
@@ -276,6 +291,10 @@ def load_state():
     for r in reversed(DB.x("SELECT ts,ip,sev,rule,target FROM hits ORDER BY rowid DESC LIMIT 25000")):
         if r[0] >= since:
             (MAP_LOW if r[2] in ("low", "info") else MAP_HITS).append(tuple(r))
+    for r in reversed(DB.x("SELECT last, ip, container, via FROM access WHERE last >= ? ORDER BY last DESC LIMIT 20000",
+                           (since,))):
+        if r[3] not in LOCALISH:
+            MAP_ACT.append((r[0], r[1], "info", "access", r[2]))
     log.info("loaded %d IPs, %d alerts, %d events from %s", n, len(ALERTS), len(EVENTS), DB_PATH)
 
 
@@ -299,6 +318,8 @@ def flush():
             LAST_HIT.pop(k, None)
         for k in [k for k, t in LAST_SSH_FAIL.items() if now - t > 60]:
             LAST_SSH_FAIL.pop(k, None)
+        for k in [k for k, t in ACT_SEEN.items() if now - t > 60]:
+            ACT_SEEN.pop(k, None)
         for ip in list(RECENT_CT):
             d = {c: t for c, t in RECENT_CT[ip].items() if now - t < 300}
             if d:
@@ -534,6 +555,8 @@ def process_access_line(line, source, default_target, default_role="platform", h
         if sure and target in CONTAINERS:
             record_access(target, ip, now, True, (), via="nginx log" if source.startswith("file:") else "web log",
                           count_ip=False)
+        else:
+            activity(ip, "access", target, now)
         if st["_min"] != m:
             st["_min"], st["_mc"] = m, 0
         st["_mc"] += 1
@@ -1023,6 +1046,7 @@ def ssh_rec(st, now):
 
 
 def ssh_fail(ip, user, now):
+    activity(ip, "ssh-failed", "host-ssh", now)
     with LOCK:
         st = get_ip(ip, now)
         d = ssh_rec(st, now)
@@ -1049,6 +1073,7 @@ def handle_auth(line):
             except Exception as e:
                 log.warning("lookup %s failed: %s", ip, e)
         extra = f", key {key}" if key else ""
+        activity(ip, "ssh-login", "host-ssh", now, "info" if trusted else "high")
         rec_event("medium" if not trusted else "info", "ssh-login", "host", "", f"{user} from {ip} ({method}{extra})")
         alert("medium" if trusted else "high", "ssh-login", ip,
               f"SSH login as {user} from {ip}{intel_tag(ip)} ({method}{extra})", "ip")
@@ -1071,6 +1096,7 @@ def handle_auth(line):
     if m:
         ip = norm_ip(m.group(1) or m.group(3) or m.group(4))
         note = (m.group(2) or m.group(5) or "no SSH banner sent (port scanner)")[:160]
+        activity(ip, "ssh-scan", "host-ssh", now)
         with LOCK:
             d = ssh_rec(get_ip(ip, now), now)
             if note not in d["notes"]:
@@ -1152,6 +1178,8 @@ def record_access(ct, ip, now, new, gws, via=None, count_ip=True):
             a["flows"] += 1
             if count_ip and via not in LOCALISH:
                 get_ip(ip, now)["containers"][ct] += 1
+            if via not in LOCALISH:
+                activity(ip, "access", ct, now)
         if via not in LOCALISH:
             RECENT_CT[ip][ct] = now
         DIRTY_ACC.add((ct, ip))
@@ -1539,9 +1567,9 @@ IPAPI_FIELDS = ("status,message,query,continent,country,countryCode,regionName,c
                 "isp,org,as,asname,reverse,mobile,proxy,hosting")
 
 
-def is_public(ip):
+def is_public(ip, trusted_ok=False):
     o = ip_obj(ip)
-    return bool(o) and o.is_global and not is_trusted(ip) and ip not in PUBLIC_IPS
+    return bool(o) and o.is_global and (trusted_ok or not is_trusted(ip)) and ip not in PUBLIC_IPS
 
 
 def _http_json(url, data=None, headers=None, timeout=8):
@@ -1585,9 +1613,11 @@ def intel_store(ip, upd):
 
 
 def intel_want(ip, deep=False):
-    """queue an IP for lookup; deep = also VPN-provider + abuse reputation (used for attackers)"""
-    if not INTEL_ON or not is_public(ip):
+    """queue an IP for lookup; deep = also VPN-provider + abuse reputation (used for attackers)
+    trusted (admin) IPs only get the location, so they can be shown on the live map"""
+    if not INTEL_ON or not is_public(ip, trusted_ok=True):
         return
+    deep = deep and not is_trusted(ip)
     with INTEL_LOCK:
         d = INTEL.get(ip)
         fresh = d and time.time() - d.get("ts", 0) < INTEL_TTL
@@ -1815,23 +1845,22 @@ def map_geo(ip):
     return {k: d.get(k) for k in ("cc", "country", "city", "lat", "lon")}
 
 
-def attack_map(include_low=False):
-    """last 24 h of detections, grouped by attacker location, for the live attack map"""
+def attack_map(include_all=True):
+    """last 24 h grouped by source location for the live map: all activity, or only medium/high detections"""
     now = time.time()
     since = now - 86400
     with LOCK:
-        rows = [a for a in MAP_HITS if a[0] >= since]
-        full = len(MAP_HITS) == MAP_HITS.maxlen
-        if include_low:
-            rows = sorted(rows + [a for a in MAP_LOW if a[0] >= since])
-            full = full or len(MAP_LOW) == MAP_LOW.maxlen
+        streams = (MAP_HITS, MAP_LOW, MAP_ACT) if include_all else (MAP_HITS,)
+        rows = sorted(a for s in streams for a in s if a[0] >= since)
+        full = any(len(s) == s.maxlen for s in streams)
     trusted = {ip for ip in {a[1] for a in rows} if is_trusted(ip)}
-    rows = [a for a in rows if a[1] not in trusted]
+    if not include_all:                          # attacks only: your own (trusted) IPs are never attackers
+        rows = [a for a in rows if a[1] not in trusted]
     per_ip, per_cc, rules, targets = {}, {}, Counter(), Counter()
     for ts, ip, sev, rule, target in rows:
         p = per_ip.get(ip)
         if p is None:
-            p = per_ip[ip] = {"ip": ip, **map_geo(ip), "n": 0, "sev": sev, "last": ts}
+            p = per_ip[ip] = {"ip": ip, **map_geo(ip), "n": 0, "sev": sev, "last": ts, "trusted": ip in trusted}
         p["n"] += 1
         p["last"] = ts
         if SEVR[sev] > SEVR[p["sev"]]:
@@ -1842,7 +1871,7 @@ def attack_map(include_low=False):
         c = per_cc.setdefault(p["cc"] or "", {"cc": p["cc"], "country": p["country"], "ips": 0, "n": 0})
         c["ips"] += 1
         c["n"] += p["n"]
-    feed = [{"ts": ts, "ip": ip, "sev": sev, "rule": rule, "target": target, **map_geo(ip)}
+    feed = [{"ts": ts, "ip": ip, "sev": sev, "rule": rule, "target": target, "trusted": ip in trusted, **map_geo(ip)}
             for ts, ip, sev, rule, target in rows[-40:][::-1]]
     located = sorted((p for p in per_ip.values() if p["lat"] is not None), key=lambda p: -p["last"])
     return {
@@ -1858,7 +1887,7 @@ def attack_map(include_low=False):
     }
 
 
-def overview(include_low=False):
+def overview(map_all=True):
     now = time.time()
     with LOCK:
         cts = [ct_json(c) for c in CONTAINERS.values()]
@@ -1881,7 +1910,7 @@ def overview(include_low=False):
             "top_cpu": sorted((c for c in cts if c["cpu"] is not None), key=lambda c: -c["cpu"])[:10],
             "sources": [{"name": k, "status": v} for k, v in sorted(SOURCES.items())],
         }
-    out["map"] = attack_map(include_low)
+    out["map"] = attack_map(map_all)
     return out
 
 
@@ -2017,6 +2046,30 @@ class Handler(BaseHTTPRequestHandler):
             SESSIONS.pop(tok, None)
         return False
 
+    def peer(self):
+        return norm_ip(self.client_address[0])
+
+    def watch(self):
+        """the dashboard watches itself too: who opens it shows on the live map (matters if it's exposed)"""
+        activity(self.peer(), "dashboard" if self.authed() else "access", "ctfwarden", time.time())
+
+    def login_failed(self, user):
+        ip, now = self.peer(), time.time()
+        with LOCK:
+            st = get_ip(ip, now)
+            if st["trusted"]:
+                return
+            flag(st, "medium", "dashboard-login-fail", "ctfwarden", f"user {user[:60]}", self.headers.get("User-Agent", ""), now)
+            if win(st, "w_warden", now, 600, 20) >= 5:
+                flag(st, "high", "dashboard-bruteforce", "ctfwarden", "5+ failed logins in 10 min",
+                     self.headers.get("User-Agent", ""), now)
+
+    def login_ok(self, user):
+        ip, now = self.peer(), time.time()
+        trusted = is_trusted(ip)
+        activity(ip, "dashboard-login", "ctfwarden", now, "info" if trusted else "medium")
+        alert("info" if trusted else "medium", "dashboard-login", ip, f"CTFWarden login as {user[:60]} from {ip}{intel_tag(ip)}", "ip")
+
     def send(self, code, body, ctype, headers=(), cache="no-store"):
         if isinstance(body, str):
             body = body.encode()
@@ -2042,6 +2095,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        self.watch()
         p = urlparse(self.path).path
         if p == "/api/login":
             return self.login()
@@ -2066,7 +2120,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, json.dumps({"error": "bad request"}), "application/json")
         if not (hmac.compare_digest(user.encode(), USER.encode()) & hmac.compare_digest(pw.encode(), PASSWORD.encode())):
             fails.append(now)
+            self.login_failed(user)
             return self.send(401, json.dumps({"error": "wrong username or password"}), "application/json")
+        self.login_ok(user)
         tok = secrets.token_urlsafe(32)
         with SESS_LOCK:
             for t in [t for t, e in SESSIONS.items() if e <= now]:
@@ -2076,6 +2132,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(200, json.dumps({"ok": True}), "application/json", [("Set-Cookie", cookie)])
 
     def do_GET(self):
+        self.watch()
         u = urlparse(self.path)
         if u.path == "/login":
             if self.authed():
@@ -2111,7 +2168,7 @@ class Handler(BaseHTTPRequestHandler):
             if FLAG_RE.fullmatch(p) and os.path.exists(os.path.join(HERE, "static", p[1:])):
                 return self.send(200, asset(p[1:]), "image/png", cache="private, max-age=86400")
             if p == "/api/overview":
-                return self.json(overview(g("all") == "1"))
+                return self.json(overview(g("map") != "attacks"))
             if p == "/api/containers":
                 with LOCK:
                     return self.json([ct_json(c) for c in CONTAINERS.values()])

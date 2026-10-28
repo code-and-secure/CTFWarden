@@ -150,7 +150,7 @@ select{background:rgba(7,10,16,.7);border:1px solid var(--line);color:var(--text
 .amap-canvas svg{display:block;width:100%;height:auto}
 .land path{fill:#172031;stroke:#0a0f19;stroke-width:.6;transition:fill .8s}
 .land path:hover{stroke:rgba(255,255,255,.35)}
-.s-high{--c:var(--high)}.s-medium{--c:var(--medium)}.s-low{--c:var(--low)}.s-home{--c:var(--ok)}
+.s-high{--c:var(--high)}.s-medium{--c:var(--medium)}.s-low{--c:var(--low)}.s-info{--c:var(--accent2)}.s-trusted{--c:#2dd4bf}.s-home{--c:var(--ok)}
 .pt{fill:var(--c);stroke:#080c14;stroke-width:.8}
 .ring,.boom,.src{fill:none;stroke:var(--c);stroke-width:1.2;transform-box:fill-box;transform-origin:center;pointer-events:none}
 .ring{animation:ring 2.4s ease-out infinite}
@@ -172,7 +172,8 @@ select{background:rgba(7,10,16,.7);border:1px solid var(--line);color:var(--text
 .amap-legend{position:absolute;left:10px;bottom:10px;display:grid;gap:3px;background:rgba(8,12,20,.82);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:11px;color:var(--muted)}
 .amap-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:7px}
 .amap-legend .scale{display:inline-block;width:70px;height:6px;border-radius:3px;margin:0 6px;vertical-align:middle;background:linear-gradient(90deg,rgba(255,92,122,.22),rgba(255,92,122,.9))}
-.amap-side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.amap-main{min-width:0}
+.amap-side{display:flex;flex-direction:column;gap:14px;min-width:0;position:sticky;top:76px}
 .rank h4{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text);font-weight:700}
 .rank h4 span{display:block;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:500}
 .rank ol{list-style:none;margin:0;padding:0;display:grid;gap:3px}
@@ -188,7 +189,7 @@ select{background:rgba(7,10,16,.7);border:1px solid var(--line);color:var(--text
 #amap-feed h3{margin-top:16px}
 @media (max-width:1100px){
   .amap-body{grid-template-columns:1fr}
-  .amap-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .amap-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));position:static}
 }
 @media (max-width:760px){
   .amap{padding:12px 12px 2px}

@@ -15,7 +15,7 @@ CTFWarden is one Python process (~40–80 MB RAM) with no database server and no
 | **Web traffic** | Reads host nginx's existing access logs, read-only and auto-discovered. It keeps per-IP request counts, 4xx/404/429 counts and peak req/min, and lists the user agents and targets each IP used. |
 | **Suspicious IPs** | Scanners (sqlmap, nikto, ffuf…), traversal/SQLi/XSS/SSTI/cmd-injection/log4shell probes, `.git`/`.env` hunting, `/admin` probing, **CTFd login brute force**, **mass registration** (multi-accounting), **flag brute force**, dir-busting and request floods. |
 | **Host** | SSH logins (who/which IP/key), SSH brute force, and `sudo docker exec …` (this tells you *which admin* shelled into a container). It also tracks host CPU, RAM and disk. |
-| **Live attack map** | On the Overview tab: a world map of the last 24 h of detections. Countries are shaded by attack count, and an arc animates from the attacker's city to your server for each new detection. Next to it are the top attacking countries (with flags), top attack types, most-targeted containers and a real-time attack feed. Challenge traffic (`low`) is hidden unless you switch it on. |
+| **Live activity map** | On the Overview tab: a world map of the last 24 h. **All activity** (the default) shows every SSH login, failed or scanned SSH attempt, and connection or request to a container, at most once per IP/target per minute, plus every detection. The dashboard watches itself as well: visits, logins, failed logins (`dashboard-login-fail`) and 5+ failures in 10 min (`dashboard-bruteforce`, high). Your trusted IPs appear in teal. **Attacks only** shows medium/high detections from untrusted IPs. Countries are shaded by event count, and each new event animates an arc from its city to your server. Next to the map are the top source countries (with flags), top activity types, most-targeted containers and a real-time feed. |
 | **Risky configs** | Flags challenge containers that are privileged, have `docker.sock` mounted, use host network/pid, carry dangerous caps, or have no memory/PIDs limit. |
 
 Attack patterns aimed **at challenges** are recorded as `low` and don't raise the IP's score, because attacking challenges is the game. The same patterns aimed **at CTFd itself** are `high`.
@@ -128,7 +128,7 @@ Every public IP gets a location, and every IP that triggers a rule (SSH brute fo
 
 What an IP **can't** tell you: the attacker's PC name, username, MAC address or exact street address. None of that travels over SSH or HTTP. Location is city-level at best. If the IP is a VPN/Tor/datacenter, you only learn about the VPN or server, not the person behind it. Most SSH brute force comes from infected servers and botnets, not from the person who controls them. CTFWarden only does passive lookups and never probes the attacker's machine.
 
-Privacy: with `CTFMON_INTEL_SCOPE=all`, players' IPs are sent to ip-api.com. Set it to `flagged` to only look up IPs that triggered a rule, or `CTFMON_INTEL=0` to turn lookups off. Results are cached in SQLite for 7 days (`CTFMON_INTEL_TTL_DAYS`).
+Privacy: with `CTFMON_INTEL_SCOPE=all`, players' IPs are sent to ip-api.com. Your trusted IPs are sent there too, for location only, so they can appear on the live map. They never get VPN or abuse lookups. Set it to `flagged` to only look up IPs that triggered a rule, or `CTFMON_INTEL=0` to turn lookups off. Results are cached in SQLite for 7 days (`CTFMON_INTEL_TTL_DAYS`).
 
 ## Blocking an IP
 
