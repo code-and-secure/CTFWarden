@@ -15,7 +15,7 @@ const tgt = (t, ty) => (ty === 'ip' || (!ty && looksIP(t))) ? ipl(t) : (ty === '
 const pct = (v, warn = 80) => v == null ? '–' : `${(+v).toFixed(1)}%<span class="bar"><i style="width:${Math.min(100, v)}%;background:${v >= warn ? 'var(--high)' : 'var(--accent)'}"></i></span>`;
 const pairs = (o, link) => Object.entries(o || {}).map(([k, n]) => `${link ? link(k) : esc(k)}<span class="muted">×${n}</span>`).join(', ');
 
-const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null, page: {}, size: 25};
+const S = {tab: 'overview', data: {}, sort: {}, susp: false, modal: null, page: {}, size: 25, mapAll: false, map: null};
 
 async function api(p) {
   const r = await fetch(p, {cache: 'no-store', credentials: 'same-origin'});
@@ -88,10 +88,11 @@ const IPC = [
   {k: 'last', l: 'Last seen', f: x => when(x.last)},
   {k: 'last_req', l: 'Last request', c: 'w'},
 ];
-const flagEmoji = cc => /^[A-Z]{2}$/.test(cc || '') ? String.fromCodePoint(...[...cc].map(c => 0x1F1A5 + c.charCodeAt(0))) : '';
+// image flags (static/flags, served locally because of the CSP) – emoji flags don't render on Windows
+const flag = cc => /^[A-Z]{2}$/.test(cc || '') ? `<img class="flag" src="/flags/${cc.toLowerCase()}.png" alt="" title="${cc}" width="20" height="15">` : '';
 const tagBadge = t => `<span class="b ${/^(Tor|VPN|proxy)/.test(t) ? 'high' : /^abuse/.test(t) ? 'medium' : 'info'}">${esc(t)}</span>`;
 const geoCell = g => !g ? '<span class="muted">…</span>' :
-  `${flagEmoji(g.cc)} ${esc(g.cc || '?')} <span class="muted">${esc(g.city || '')}</span> · ${esc(g.org || '')} ${(g.tags || []).map(tagBadge).join('')}`;
+  `${flag(g.cc)} ${esc(g.cc || '?')} <span class="muted">${esc(g.city || '')}</span> · ${esc(g.org || '')} ${(g.tags || []).map(tagBadge).join('')}`;
 const yes = (v, label) => v ? `<span class="b high">${esc(label)}</span>` : '';
 const ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`;
 
@@ -114,7 +115,7 @@ function intelBlock(ip, t, i) {
       <div>Successful logins</div><div>${(ssh.logins || []).map(l => `<span class="bad">${esc(l.user)}</span> via ${esc(l.method)} ${esc(l.key)} <span class="muted">${tm(l.ts)}</span>`).join('<br>') || '<span class="ok">none</span>'}</div>
       <div>SSH client notes</div><div>${(ssh.notes || []).map(esc).join('<br>') || '–'}</div>` : '';
   return `<h3>Who is this</h3><div class="kv">
-      <div>Location</div><div>${flagEmoji(t.cc)} ${esc(loc || t.geo_error || 'looking up…')} ${t.continent ? `<span class="muted">(${esc(t.continent)})</span>` : ''}</div>
+      <div>Location</div><div>${flag(t.cc)}${esc(loc || t.geo_error || 'looking up…')} ${t.continent ? `<span class="muted">(${esc(t.continent)})</span>` : ''}</div>
       <div>Coordinates</div><div>${map}</div>
       <div>Timezone</div><div>${esc(t.tz || '–')}</div>
       <div>ISP</div><div>${esc(t.isp || '–')}</div>
@@ -181,6 +182,149 @@ const LNK = [
   {k: 'last', l: 'Last', f: x => when(x.last)},
 ];
 
+// ---------------------------------------------------------------- live attack map
+// Natural Earth projection (same formula as d3-geo's geoNaturalEarth1), cropped to 84°N..58°S
+const NE = (lon, lat) => {
+  const l = lon * Math.PI / 180, p = lat * Math.PI / 180, p2 = p * p, p4 = p2 * p2;
+  return [l * (0.8707 - 0.131979 * p2 + p4 * (-0.013791 + p4 * (0.003971 * p2 - 0.001529 * p4))),
+    p * (1.007226 + p2 * (0.015085 + p4 * (-0.044475 + 0.028874 * p2 - 0.005916 * p4)))];
+};
+const MW = 1000, MX = NE(180, 0)[0], MTOP = NE(0, 84)[1], MH = Math.round((MTOP - NE(0, -58)[1]) / (2 * MX) * MW);
+const proj = (lon, lat) => { const [x, y] = NE(lon, lat); return [(x / MX + 1) * MW / 2, (MTOP - y) / (2 * MX) * MW]; };
+const f1 = v => v.toFixed(1);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const svgEl = (tag, attrs, parent) => {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return parent.appendChild(e);
+};
+
+function buildMap(world) {
+  const ring = r => 'M' + r.map(([lon, lat]) => proj(lon, lat).map(f1).join(',')).join('L') + 'Z';
+  const el = document.createElement('div');
+  el.className = 'amap-canvas';
+  el.innerHTML = `<svg viewBox="0 0 ${MW} ${MH}" role="img" aria-label="World map of attack sources">
+      <g class="land">${world.map(c => `<path data-cc="${esc(c.c)}" data-n="${esc(c.n)}" d="${c.p.map(p => p.map(ring).join('')).join('')}"><title>${esc(c.n)}</title></path>`).join('')}</g>
+      <g class="pts"></g><g class="arcs"></g></svg>
+    <div class="amap-labels"></div><div class="amap-empty" hidden>No attacks in this window – sources light up here as they are detected.</div>
+    <div class="amap-legend"><span><i class="s-high"></i>High</span><span><i class="s-medium"></i>Medium</span><span><i class="s-low"></i>Low (challenge)</span><span><i class="s-home"></i>Your server</span><span>Few <b class="scale"></b> Many</span></div>`;
+  const land = new Map();
+  el.querySelectorAll('.land path').forEach(p => land.set(p.dataset.cc, [...(land.get(p.dataset.cc) || []), p]));
+  const q = s => el.querySelector(s);
+  return {el, land, pts: q('.pts'), arcs: q('.arcs'), labels: q('.amap-labels'), empty: q('.amap-empty'), seen: 0, key: ''};
+}
+
+function updateMap(M, m) {
+  const max = Math.max(1, ...m.countries.map(c => c.n)), heat = new Map(m.countries.map(c => [c.cc, c]));
+  M.land.forEach((paths, cc) => {
+    const c = heat.get(cc), a = c ? 0.22 + 0.68 * Math.log1p(c.n) / Math.log1p(max) : 0;
+    paths.forEach(p => {
+      p.style.fill = c ? `rgba(255,92,122,${a.toFixed(2)})` : '';
+      p.firstChild.textContent = c ? `${p.dataset.n}: ${c.n} attacks from ${c.ips} IP${c.ips === 1 ? '' : 's'}` : p.dataset.n;
+    });
+  });
+  M.empty.hidden = m.attacks > 0;
+  const H = m.home && m.home.lat != null ? proj(m.home.lon, m.home.lat) : null;
+  const px = MW / (M.el.clientWidth || MW);         // map units per screen pixel (labels have a fixed pixel size)
+  const key = JSON.stringify([m.points, H, Math.round(px * 20)]);
+  if (key !== M.key) {                              // only rebuild when something moved, so the pulses don't restart
+    M.key = key;
+    const locs = new Map(), now = Date.now() / 1000;
+    for (const p of m.points) {
+      const k = p.lat.toFixed(1) + ',' + p.lon.toFixed(1);
+      if (!locs.has(k)) locs.set(k, {xy: proj(p.lon, p.lat), cc: p.cc, city: p.city || p.country, n: 0, ips: 0, sev: 'low', last: 0});
+      const L = locs.get(k);
+      L.n += p.n; L.ips++; L.last = Math.max(L.last, p.last);
+      if (R[p.sev] > R[L.sev]) L.sev = p.sev;
+    }
+    const svg = [], lab = [], placed = [];
+    for (const L of locs.values()) {
+      const [x, y] = L.xy.map(f1), r = f1(1.8 + Math.min(4, Math.log1p(L.n)));
+      if (now - L.last < 300) svg.push(`<circle class="ring s-${esc(L.sev)}" cx="${x}" cy="${y}" r="${r}"/>`);
+      svg.push(`<circle class="pt s-${esc(L.sev)}" cx="${x}" cy="${y}" r="${r}"><title>${esc(L.city || '?')} ${esc(L.cc || '')}: ${L.n} attacks from ${L.ips} IP${L.ips === 1 ? '' : 's'}</title></circle>`);
+    }
+    const label = ([x, y], cc, name, cls) => {
+      if (placed.some(([lx, ly]) => Math.abs(lx - x) < 115 * px && Math.abs(ly - y) < 22 * px)) return;
+      placed.push([x, y]);
+      lab.push(`<div class="mlabel ${cls}${x > MW * .8 ? ' flip' : ''}" style="left:${(x / MW * 100).toFixed(2)}%;top:${(y / MH * 100).toFixed(2)}%">${flag(cc)}${esc(name || '?')} <small>${esc(cc || '')}</small></div>`);
+    };
+    if (H) {
+      svg.push(`<circle class="ring s-home" cx="${f1(H[0])}" cy="${f1(H[1])}" r="3.5"/><circle class="pt s-home" cx="${f1(H[0])}" cy="${f1(H[1])}" r="3.5"><title>your server</title></circle>`);
+      label(H, m.home.cc, 'Your server', 'home');
+    }
+    const cities = new Map();                       // one label per city, placed at its busiest spot
+    for (const L of locs.values()) {
+      const k = L.cc + '|' + L.city;
+      if (!cities.has(k)) cities.set(k, {cc: L.cc, city: L.city, n: 0, top: 0});
+      const C = cities.get(k);
+      C.n += L.n;
+      if (L.n > C.top) { C.top = L.n; C.xy = L.xy; }
+    }
+    [...cities.values()].sort((a, b) => b.n - a.n).slice(0, 12).forEach((L, i) => label(L.xy, L.cc, L.city, i < 4 ? '' : 'minor'));
+    M.pts.innerHTML = svg.join('');
+    M.labels.innerHTML = lab.join('');
+  }
+  // animate detections that arrived since the last poll (on first open: the latest few)
+  const fresh = m.feed.filter(f => f.ts > M.seen && f.lat != null).slice(0, M.seen ? 15 : 6).reverse();
+  if (m.feed.length) M.seen = Math.max(M.seen, m.feed[0].ts);
+  fresh.forEach((f, i) => setTimeout(() => shoot(M, f, H), i * 4500 / fresh.length));
+}
+
+function shoot(M, f, H) {
+  if (REDUCED || !M.el.isConnected) return;
+  const [x1, y1] = proj(f.lon, f.lat), g = svgEl('g', {class: 'shot s-' + (f.sev || 'low')}, M.arcs);
+  if (H && Math.hypot(H[0] - x1, H[1] - y1) > 4) {
+    const [x2, y2] = H, d = Math.hypot(x2 - x1, y2 - y1);
+    const p = svgEl('path', {class: 'arc', d: `M${f1(x1)},${f1(y1)} Q${f1((x1 + x2) / 2)},${f1(Math.max(4, Math.min(y1, y2) - d * .35))} ${f1(x2)},${f1(y2)}`}, g);
+    const len = p.getTotalLength();
+    p.style.strokeDasharray = len;
+    p.style.strokeDashoffset = len;
+    svgEl('circle', {class: 'boom', cx: f1(x2), cy: f1(y2), r: 5}, g);
+  }
+  svgEl('circle', {class: 'src', cx: f1(x1), cy: f1(y1), r: 4}, g);
+  setTimeout(() => g.remove(), 3600);
+}
+
+function mountMap(m) {
+  const slot = $('#mapslot');
+  if (!slot || !m) return;
+  if (!S.map) {
+    S.worldReq = S.worldReq || api('/world.json')
+      .then(w => { S.map = buildMap(w); if (S.tab === 'overview') render(); })
+      .catch(e => { S.worldReq = null; slot.innerHTML = `<p class="bad">map unavailable: ${esc(e.message)}</p>`; });
+    return;
+  }
+  if (S.map.el.parentNode !== slot) slot.replaceChildren(S.map.el);
+  updateMap(S.map, m);
+}
+
+const clock = t => `<span title="${esc(tm(t))}">${new Date(t * 1000).toLocaleTimeString()}</span>`;
+const FEED = [
+  {k: 'ts', l: 'Time', f: x => clock(x.ts)},
+  {k: 'rule', l: 'Attack'},
+  {k: 'ip', l: 'Source', c: 'geo', f: x => `${flag(x.cc)} ${esc(x.city || x.country || 'not located yet')} <span class="muted">${esc(x.cc || '')}</span> · ${ipl(x.ip)}`, v: x => x.cc || ''},
+  {k: 'target', l: 'Target', f: x => x.target === 'host-ssh' ? 'host SSH' : ctl(x.target)},
+  {k: 'sev', l: 'Sev', f: x => sev(x.sev), v: x => R[x.sev]},
+];
+const rank = (rows, max, row) => rows.length
+  ? `<ol>${rows.map(x => `<li><i style="width:${(100 * x.n / max).toFixed(1)}%"></i>${row(x)}<span class="n">${x.n}</span></li>`).join('')}</ol>`
+  : '<p class="muted">none yet</p>';
+
+function mapHead(m) {
+  const win = m.since > Date.now() / 1000 - 86280 ? 'since ' + new Date(m.since * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'last 24 h';
+  const chip = (v, l) => `<span class="chip"><b>${esc(v)}</b>${esc(l)}</span>`;
+  return {win, head: `<h3><span class="live"></span>Live attack map</h3>
+    <div class="chips">${chip(m.attacks, 'attacks · ' + win)}${chip(m.attacks_1h, 'last hour')}${chip(m.attackers, 'attacker IPs')}${chip(m.countries.length, 'countries')}</div>
+    <div class="seg" role="group" aria-label="attack map scope"><button data-mapall="0" aria-pressed="${!S.mapAll}" class="${S.mapAll ? '' : 'on'}">Platform attacks</button><button data-mapall="1" aria-pressed="${S.mapAll}" class="${S.mapAll ? 'on' : ''}">+ challenge traffic</button></div>`};
+}
+
+function mapSide(m, win) {
+  const c = m.countries.slice(0, 10), r = m.rules, t = m.targets;
+  return `<div class="rank"><h4>Top attacking countries <span>${esc(win)}</span></h4>${rank(c, c[0]?.n, x => `${flag(x.cc)}<span class="nm">${esc(x.country || x.cc)}</span><span class="muted">${x.ips} IP${x.ips === 1 ? '' : 's'}</span>`)}</div>
+    <div class="rank alt"><h4>Top attack types</h4>${rank(r, r[0]?.n, x => `<span class="nm">${esc(x.rule)}</span>`)}</div>
+    <div class="rank alt"><h4>Most targeted</h4>${rank(t, t[0]?.n, x => `<span class="nm">${x.target === 'host-ssh' ? 'host SSH' : ctl(x.target)}</span>`)}</div>`;
+}
+
 // ---------------------------------------------------------------- views
 function card(k, v, s, tone = '') { return `<div class="card ${tone}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`; }
 const ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>';
@@ -190,13 +334,31 @@ const hero = c => c.suspicious > 0
   : `<div class="hero calm"><div class="ic">${ICON_OK}</div><div><b>All quiet</b><span>No suspicious IPs right now · ${c.alerts_1h} alerts in the last hour</span></div></div>`;
 
 const VIEWS = {
-  overview: {url: () => '/api/overview', render: d => {
+  // the overview keeps a fixed shell so the live map is never torn down (its animations would restart every poll)
+  overview: {url: () => '/api/overview' + (S.mapAll ? '?all=1' : ''), mount: d => {
+    if (!$('#ov')) $('#content').innerHTML = `<div id="ov"><div id="ov-a"></div>
+      <section class="amap"><div class="amap-head" id="amap-head"></div>
+        <div class="amap-body"><div id="mapslot"><p class="muted">loading map…</p></div><aside class="amap-side" id="amap-side"></aside></div>
+        <p class="muted amap-note" id="amap-note"></p><div id="amap-feed"></div></section>
+      <div id="ov-b"></div></div>`;
+    const m = d.map, {win, head} = mapHead(m);
+    $('#amap-head').innerHTML = head;
+    $('#amap-side').innerHTML = mapSide(m, win);
+    $('#amap-note').innerHTML = [
+      m.unlocated ? `${m.unlocated} attacker IP${m.unlocated === 1 ? '' : 's'} not on the map yet (waiting for geolocation, or CTFMON_INTEL=0).` : '',
+      m.home ? '' : 'Server location unknown, so no arcs are drawn: set <code>CTFMON_MAP_HOME=lat,lon</code>.'].filter(Boolean).join(' ');
+    $('#amap-feed').innerHTML = `<h3>Real-time attacks</h3>${grid('ov-feed', FEED, m.feed.slice(0, 12), {nofilter: 1})}`;
+    const [a, b] = VIEWS.overview.render(d);
+    $('#ov-a').innerHTML = a;
+    $('#ov-b').innerHTML = b;
+    mountMap(m);
+  }, render: d => {
     const h = d.host || {}, c = d.counts, df = d.df || {};
     const memUsed = h.mem_total ? h.mem_total - h.mem_avail : null;
     const memPct = h.mem_total ? Math.round(100 * memUsed / h.mem_total) : null;
     const diskPct = h.disk_total ? Math.round(100 * (1 - h.disk_free / h.disk_total)) : null;
     const tone = v => v == null ? '' : v >= 90 ? 't-high' : v >= 75 ? 't-warn' : 't-ok';
-    return `${hero(c)}<div class="cards">
+    return [`${hero(c)}<div class="cards">
       ${card('Host CPU', h.cpu == null ? '–' : h.cpu + '%', `${h.ncpu || '?'} cores · load ${(h.load || []).join(' ')}`, tone(h.cpu))}
       ${card('Host memory', memPct == null ? '–' : memPct + '%', `${hb(memUsed)} / ${hb(h.mem_total)}`, tone(memPct))}
       ${card('Host disk', diskPct == null ? '–' : diskPct + '%', `${hb(h.disk_free)} free`, tone(diskPct))}
@@ -206,11 +368,10 @@ const VIEWS = {
       ${card('Unique IPs', c.ips, `${c.active_ips} active in 5 min`)}
       ${card('Suspicious IPs', c.suspicious, `score ≥ ${d.threshold}`, c.suspicious > 0 ? 't-high' : 't-ok')}
       ${card('Alerts (1h)', c.alerts_1h, `${c.high_1h} high`, c.high_1h > 0 ? 't-high' : '')}
-    </div>
-    <h3>Recent alerts</h3>${grid('ov-al', AL, d.alerts, {nofilter: 1})}
+    </div>`, `<h3>Recent alerts</h3>${grid('ov-al', AL, d.alerts, {nofilter: 1})}
     <h3>Most suspicious IPs</h3>${grid('ov-ip', IPC, d.top_suspicious, {nofilter: 1})}
     <h3>Busiest containers</h3>${grid('ov-ct', CTC.slice(0, 7), d.top_cpu, {nofilter: 1})}
-    <h3>Data sources</h3>${grid('ov-src', [{k: 'name', l: 'Source'}, {k: 'status', l: 'Status', c: 'w', f: x => `<span class="${String(x.status).startsWith('ok') ? 'ok' : 'bad'}">${esc(x.status)}</span>`}], d.sources, {nofilter: 1})}`;
+    <h3>Data sources</h3>${grid('ov-src', [{k: 'name', l: 'Source'}, {k: 'status', l: 'Status', c: 'w', f: x => `<span class="${String(x.status).startsWith('ok') ? 'ok' : 'bad'}">${esc(x.status)}</span>`}], d.sources, {nofilter: 1})}`];
   }},
   containers: {url: () => '/api/containers', render: d => grid('ct', CTC, d)},
   ips: {url: () => '/api/ips?limit=5000' + (S.susp ? '&suspicious=1' : ''), render: d =>
@@ -220,7 +381,10 @@ const VIEWS = {
   hits: {url: () => '/api/hits?limit=2000', render: d => grid('hit', HIT, d)},
 };
 
-function render() { const d = S.data[S.tab]; if (d) $('#content').innerHTML = VIEWS[S.tab].render(d); }
+function render() {
+  const d = S.data[S.tab], v = VIEWS[S.tab];
+  if (d) v.mount ? v.mount(d) : $('#content').innerHTML = v.render(d);
+}
 
 async function load() {
   if (S.modal) return;                       // don't refresh under an open detail view
@@ -289,7 +453,7 @@ function closeModal() { S.modal = null; $('#modal').hidden = true; load(); }
 // ---------------------------------------------------------------- events
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' || e.target.id === 'close') return closeModal();
-  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],[data-susp],[data-pg]');
+  const t = e.target.closest('[data-tab],[data-ip],[data-ct],th[data-k],[data-susp],[data-pg],[data-mapall]');
   if (!t) return;
   if (t.dataset.tab) {
     S.tab = t.dataset.tab;
@@ -298,6 +462,7 @@ document.addEventListener('click', e => {
   } else if (t.dataset.ip) { openModal('ip', t.dataset.ip); }
   else if (t.dataset.ct) { openModal('ct', t.dataset.ct); }
   else if (t.dataset.susp !== undefined) { S.susp = t.dataset.susp === '1'; load(); }
+  else if (t.dataset.mapall !== undefined) { S.mapAll = t.dataset.mapall === '1'; load(); }
   else if (t.dataset.pg) {
     const [id, n] = t.dataset.pg.split(':');
     S.page[id] = +n; render();
@@ -308,6 +473,7 @@ document.addEventListener('click', e => {
     id.startsWith('m-') ? renderModal() : render();
   }
 });
+document.addEventListener('error', e => { if (e.target.classList && e.target.classList.contains('flag')) e.target.remove(); }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.modal) closeModal(); });
 $('#filter').addEventListener('input', () => { S.page = {}; render(); });
 document.addEventListener('change', e => {

@@ -124,6 +124,8 @@ SOURCES = {}
 DIRTY_IPS, DIRTY_ACC, DIRTY_LINKS = set(), set(), set()
 HIT_Q = []
 LAST_HIT, ALERT_COOL = {}, {}
+MAP_HITS = deque(maxlen=20000)      # recent medium/high detections (ts, ip, sev, rule, target) for the live map
+MAP_LOW = deque(maxlen=5000)        # recent low (challenge) detections, kept apart so they can't push out the above
 COUNTERS = Counter()
 REQ_MIN = {"m": 0, "cur": 0, "prev": 0}
 STARTED = time.time()
@@ -270,6 +272,10 @@ def load_state():
         ALERTS.append(dict(zip(("ts", "sev", "kind", "target", "ttype", "msg"), r)))
     for r in DB.x("SELECT ts,sev,action,container,image,detail FROM events ORDER BY rowid DESC LIMIT 2000"):
         EVENTS.append(dict(zip(("ts", "sev", "action", "container", "image", "detail"), r)))
+    since = time.time() - 86400
+    for r in reversed(DB.x("SELECT ts,ip,sev,rule,target FROM hits ORDER BY rowid DESC LIMIT 25000")):
+        if r[0] >= since:
+            (MAP_LOW if r[2] in ("low", "info") else MAP_HITS).append(tuple(r))
     log.info("loaded %d IPs, %d alerts, %d events from %s", n, len(ALERTS), len(EVENTS), DB_PATH)
 
 
@@ -401,6 +407,7 @@ def flag(st, sev, rule, target, req, ua, now):
     if SEVR[sev] > SEVR.get(st["maxsev"], -1):
         st["maxsev"] = sev
     HIT_Q.append((now, st["ip"], sev, rule, target, (req or "")[:500], (ua or "")[:300]))
+    (MAP_HITS if SEVW[sev] else MAP_LOW).append((now, st["ip"], sev, rule, target))
     if SEVW[sev]:
         intel_want(st["ip"], deep=True)          # attacker -> full lookup (location, VPN, reputation)
     if sev == "high":
@@ -1522,6 +1529,8 @@ PROXYCHECK_KEY = env("PROXYCHECK_KEY")
 ABUSEIPDB_KEY = env("ABUSEIPDB_KEY")
 DEEP_BUDGET = {"proxycheck": 900 if PROXYCHECK_KEY else 90, "abuseipdb": 900}   # lookups per day
 INTEL = {}                                        # ip -> dict
+MAP_HOME = env("MAP_HOME")                        # "lat,lon[,label]" of this server for the attack map (else geolocated)
+HOME = {}                                         # where the attack map draws its arcs to
 INTEL_Q, INTEL_DEEP, INTEL_INFLIGHT = deque(), deque(), set()
 INTEL_LOCK = threading.RLock()
 DEEP_USED = {"day": "", "proxycheck": 0, "abuseipdb": 0}
@@ -1669,6 +1678,26 @@ def refresh_tor():
         return False
 
 
+def locate_home():
+    """this server's location for the attack map: CTFMON_MAP_HOME, else geolocate CTFMON_PUBLIC_IP / our egress IP"""
+    if MAP_HOME:
+        try:
+            lat, lon, *label = MAP_HOME.split(",", 2)
+            HOME.update({"lat": float(lat), "lon": float(lon), "city": (label or ["this server"])[0].strip()})
+        except ValueError:
+            log.warning("CTFMON_MAP_HOME must be 'lat,lon[,label]', got %r", MAP_HOME)
+        return
+    if not INTEL_ON:
+        return
+    pub = next(iter(sorted(PUBLIC_IPS)), "")
+    try:
+        r = _ipapi_rec(_http_json(f"http://ip-api.com/json/{pub}?fields={IPAPI_FIELDS}"))
+        if r.get("lat") is not None:
+            HOME.update({k: r.get(k) for k in ("lat", "lon", "cc", "country", "city")})
+    except Exception as e:
+        log.warning("could not geolocate this server for the attack map (%s); set CTFMON_MAP_HOME", e)
+
+
 def intel_loop():
     for ip, ts, data in DB.x("SELECT ip, ts, data FROM ip_intel"):
         try:
@@ -1781,7 +1810,55 @@ def ct_json(c):
     return d
 
 
-def overview():
+def map_geo(ip):
+    d = INTEL.get(ip) or {}
+    return {k: d.get(k) for k in ("cc", "country", "city", "lat", "lon")}
+
+
+def attack_map(include_low=False):
+    """last 24 h of detections, grouped by attacker location, for the live attack map"""
+    now = time.time()
+    since = now - 86400
+    with LOCK:
+        rows = [a for a in MAP_HITS if a[0] >= since]
+        full = len(MAP_HITS) == MAP_HITS.maxlen
+        if include_low:
+            rows = sorted(rows + [a for a in MAP_LOW if a[0] >= since])
+            full = full or len(MAP_LOW) == MAP_LOW.maxlen
+    trusted = {ip for ip in {a[1] for a in rows} if is_trusted(ip)}
+    rows = [a for a in rows if a[1] not in trusted]
+    per_ip, per_cc, rules, targets = {}, {}, Counter(), Counter()
+    for ts, ip, sev, rule, target in rows:
+        p = per_ip.get(ip)
+        if p is None:
+            p = per_ip[ip] = {"ip": ip, **map_geo(ip), "n": 0, "sev": sev, "last": ts}
+        p["n"] += 1
+        p["last"] = ts
+        if SEVR[sev] > SEVR[p["sev"]]:
+            p["sev"] = sev
+        rules[rule] += 1
+        targets[target] += 1
+    for p in per_ip.values():
+        c = per_cc.setdefault(p["cc"] or "", {"cc": p["cc"], "country": p["country"], "ips": 0, "n": 0})
+        c["ips"] += 1
+        c["n"] += p["n"]
+    feed = [{"ts": ts, "ip": ip, "sev": sev, "rule": rule, "target": target, **map_geo(ip)}
+            for ts, ip, sev, rule, target in rows[-40:][::-1]]
+    located = sorted((p for p in per_ip.values() if p["lat"] is not None), key=lambda p: -p["last"])
+    return {
+        "home": dict(HOME) or None,
+        "since": rows[0][0] if full and rows else since,
+        "attacks": len(rows), "attacks_1h": sum(1 for a in rows if now - a[0] < 3600),
+        "attackers": len(per_ip), "unlocated": len(per_ip) - len(located),
+        "countries": sorted((c for k, c in per_cc.items() if k), key=lambda c: -c["n"]),
+        "rules": [{"rule": r, "n": n} for r, n in rules.most_common(8)],
+        "targets": [{"target": t, "n": n} for t, n in targets.most_common(6)],
+        "points": located[:400],
+        "feed": feed,
+    }
+
+
+def overview(include_low=False):
     now = time.time()
     with LOCK:
         cts = [ct_json(c) for c in CONTAINERS.values()]
@@ -1804,6 +1881,7 @@ def overview():
             "top_cpu": sorted((c for c in cts if c["cpu"] is not None), key=lambda c: -c["cpu"])[:10],
             "sources": [{"name": k, "status": v} for k, v in sorted(SOURCES.items())],
         }
+    out["map"] = attack_map(include_low)
     return out
 
 
@@ -1906,6 +1984,7 @@ def asset(name):
 BRAND = {"favicon.svg": "image/svg+xml", "favicon-32.png": "image/png", "apple-touch-icon.png": "image/png",
          "ctfwarden-512.png": "image/png", "ctfwarden-mark.svg": "image/svg+xml",
          "ctfwarden-wordmark.svg": "image/svg+xml"}
+FLAG_RE = re.compile(r"/flags/[a-z]{2}\.png")      # static/flags/xx.png (flagcdn.com, public domain)
 
 
 AUTH_FAILS = defaultdict(lambda: deque(maxlen=30))
@@ -1938,13 +2017,13 @@ class Handler(BaseHTTPRequestHandler):
             SESSIONS.pop(tok, None)
         return False
 
-    def send(self, code, body, ctype, headers=()):
+    def send(self, code, body, ctype, headers=(), cache="no-store"):
         if isinstance(body, str):
             body = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -2027,8 +2106,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, asset("index.html"), "text/html; charset=utf-8")
             if p == "/app.js":
                 return self.send(200, asset("app.js"), "application/javascript; charset=utf-8")
+            if p == "/world.json":                       # Natural Earth 110m outlines for the attack map
+                return self.send(200, asset("world.json"), "application/json", cache="private, max-age=86400")
+            if FLAG_RE.fullmatch(p) and os.path.exists(os.path.join(HERE, "static", p[1:])):
+                return self.send(200, asset(p[1:]), "image/png", cache="private, max-age=86400")
             if p == "/api/overview":
-                return self.json(overview())
+                return self.json(overview(g("all") == "1"))
             if p == "/api/containers":
                 with LOCK:
                     return self.json([ct_json(c) for c in CONTAINERS.values()])
@@ -2105,6 +2188,7 @@ def main():
     start(events_loop)
     start(conn_loop)
     start(flush_loop)
+    start(locate_home)
     if INTEL_ON:
         start(intel_loop)
     else:

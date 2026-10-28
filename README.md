@@ -15,6 +15,7 @@ CTFWarden is one Python process (~40–80 MB RAM) with no database server and no
 | **Web traffic** | Reads host nginx's existing access logs, read-only and auto-discovered. It keeps per-IP request counts, 4xx/404/429 counts and peak req/min, and lists the user agents and targets each IP used. |
 | **Suspicious IPs** | Scanners (sqlmap, nikto, ffuf…), traversal/SQLi/XSS/SSTI/cmd-injection/log4shell probes, `.git`/`.env` hunting, `/admin` probing, **CTFd login brute force**, **mass registration** (multi-accounting), **flag brute force**, dir-busting and request floods. |
 | **Host** | SSH logins (who/which IP/key), SSH brute force, and `sudo docker exec …` (this tells you *which admin* shelled into a container). It also tracks host CPU, RAM and disk. |
+| **Live attack map** | On the Overview tab: a world map of the last 24 h of detections. Countries are shaded by attack count, and an arc animates from the attacker's city to your server for each new detection. Next to it are the top attacking countries (with flags), top attack types, most-targeted containers and a real-time attack feed. Challenge traffic (`low`) is hidden unless you switch it on. |
 | **Risky configs** | Flags challenge containers that are privileged, have `docker.sock` mounted, use host network/pid, carry dangerous caps, or have no memory/PIDs limit. |
 
 Attack patterns aimed **at challenges** are recorded as `low` and don't raise the IP's score, because attacking challenges is the game. The same patterns aimed **at CTFd itself** are `high`.
@@ -89,6 +90,7 @@ If your nginx config lives somewhere other than `/etc/nginx`, change that mount 
 | `CTFMON_CTFD_CONTAINER` | `ctfd-v388-ctfd-1` | where CTFd-route requests in shared logs are attributed |
 | `CTFMON_NGINX_CONF` | `/host/etc/nginx` | host nginx config dir to build the public-port → container map |
 | `CTFMON_PUBLIC_IP` | – | VM public IP(s), so instance → public-IP traffic is recognised |
+| `CTFMON_MAP_HOME` | geolocated | `lat,lon[,label]` of your server on the attack map. Without it, the server is geolocated from `CTFMON_PUBLIC_IP` (or its outgoing IP) |
 | `CTFMON_FILE_ROLE` | `challenge` | how to score requests in LOG_FILES that can't be attributed |
 | `CTFMON_CONN_PER_MIN` | 120 | TCP sessions/min from one IP before `conn-flood` |
 | `CTFMON_WEBHOOK` | – | Discord/Slack webhook for HIGH alerts (max 20/min, @mentions disabled) |
